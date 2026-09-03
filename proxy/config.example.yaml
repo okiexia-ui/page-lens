@@ -1,0 +1,21 @@
+# CLIProxyAPI minimal local-only configuration for Page Lens.
+host: "127.0.0.1"
+port: 8317
+
+tls:
+  enable: false
+
+remote-management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: true
+
+auth-dir: "~/.cli-proxy-api"
+
+api-keys:
+  - "replace-with-a-long-random-local-key"
+
+debug: false
+logging-to-file: true
+usage-statistics-enabled: false
+passthrough-headers: false

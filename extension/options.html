@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Page Lens 设置</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="settings">
+      <header class="page-header">
+        <div class="mark">P</div>
+        <div><h1>Page Lens 设置</h1><p>订阅代理、自定义 API 与阅读范围</p></div>
+      </header>
+
+      <div class="settings-group">
+        <div class="group-heading">
+          <div><span class="group-kicker">Subscription</span><h2>GPT / Kimi 订阅代理</h2></div>
+          <span class="group-badge">本机</span>
+        </div>
+
+        <section>
+          <label for="baseUrl">代理地址</label>
+          <input id="baseUrl" type="url" spellcheck="false">
+          <small>默认仅连接 127.0.0.1；GPT/Kimi OAuth 凭据由 CLIProxyAPI 单独保存。</small>
+        </section>
+
+        <section>
+          <label for="apiKey">本机客户端密钥</label>
+          <div class="secret-row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><button type="button" data-secret-target="apiKey">显示</button></div>
+        </section>
+
+        <button id="testProxyButton" class="inline-button" type="button">测试订阅代理</button>
+      </div>
+
+      <div class="settings-group custom-group">
+        <div class="group-heading">
+          <div><span class="group-kicker">Bring your own key</span><h2>自定义 OpenAI 兼容 API</h2></div>
+          <span class="group-badge optional">可选</span>
+        </div>
+
+        <section>
+          <label for="customApiBaseUrl">API Base URL</label>
+          <input id="customApiBaseUrl" type="url" placeholder="https://api.example.com/v1" spellcheck="false">
+          <small>填写到版本路径，例如 <code>https://api.openai.com/v1</code> 或其他兼容服务的 <code>/v1</code> 地址。</small>
+        </section>
+
+        <section>
+          <label for="customApiKey">API Key</label>
+          <div class="secret-row"><input id="customApiKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false"><button type="button" data-secret-target="customApiKey">显示</button></div>
+          <small>密钥只保存在 Chrome 本地存储，不会写入项目文件或上传 GitHub。</small>
+        </section>
+
+        <section>
+          <label for="customApiModel">模型名称</label>
+          <input id="customApiModel" list="customModelList" placeholder="例如 gpt-4.1-mini" spellcheck="false">
+          <datalist id="customModelList"></datalist>
+          <small>可手动输入；点击测试后也会尝试从 <code>/models</code> 获取。</small>
+        </section>
+
+        <button id="testCustomButton" class="inline-button" type="button">测试并获取模型</button>
+      </div>
+
+      <div class="settings-group compact-group">
+        <section>
+          <label for="maxChars">每页最多发送字符数</label>
+          <input id="maxChars" type="number" min="5000" max="120000" step="5000">
+          <small>内容越多，回答越完整，但会消耗更多额度。建议 60,000。</small>
+        </section>
+
+        <section>
+          <label for="selectedModel">默认模型</label>
+          <select id="selectedModel"><option value="">在侧边栏中选择</option></select>
+        </section>
+      </div>
+
+      <div class="actions">
+        <button id="saveButton" class="primary" type="button">保存设置</button>
+      </div>
+      <div id="result" class="result" hidden></div>
+
+      <aside>
+        <strong>隐私说明</strong>
+        <p>扩展只在你点击图标、发送问题时读取当前网页。选择订阅模型时正文经本机代理发送；选择自定义 API 时正文直接发送到你填写的服务。它不会后台扫描标签页。</p>
+      </aside>
+    </main>
+    <script src="config.js"></script>
+    <script src="config.local.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

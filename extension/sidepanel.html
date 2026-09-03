@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Page Lens</title>
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <div class="mark" aria-hidden="true">P</div>
+          <div>
+            <h1>Page Lens</h1>
+            <div class="connection"><span id="statusDot" class="status-dot"></span><span id="statusText">连接中</span></div>
+          </div>
+        </div>
+        <button id="settingsButton" class="icon-button" type="button" title="设置" aria-label="打开设置">⚙</button>
+      </header>
+
+      <section class="model-bar" aria-label="模型设置">
+        <div id="providerTabs" class="provider-tabs">
+          <button type="button" data-provider="all" class="provider-tab active">全部</button>
+          <button type="button" data-provider="gpt" class="provider-tab">GPT</button>
+          <button type="button" data-provider="kimi" class="provider-tab">Kimi</button>
+          <button type="button" data-provider="custom" class="provider-tab">自定义 API</button>
+        </div>
+        <div class="model-row">
+          <select id="modelSelect" aria-label="选择模型"><option>正在加载模型…</option></select>
+          <button id="refreshModelsButton" class="icon-button small" type="button" title="刷新模型" aria-label="刷新模型">↻</button>
+        </div>
+      </section>
+
+      <section id="pageCard" class="page-card">
+        <div class="page-eyebrow">当前页面</div>
+        <div id="pageTitle" class="page-title">正在读取…</div>
+        <div id="pageUrl" class="page-url"></div>
+        <div class="page-actions">
+          <button id="refreshPageButton" class="ghost-button" type="button">重新读取</button>
+          <span id="pageMeta" class="page-meta"></span>
+        </div>
+      </section>
+
+      <main id="conversation" class="conversation" aria-live="polite">
+        <section id="emptyState" class="empty-state">
+          <div class="empty-orbit" aria-hidden="true"><span></span></div>
+          <h2>从这页开始</h2>
+          <p>用你的 GPT 或 Kimi 订阅额度，直接阅读当前网页。</p>
+          <div class="quick-actions">
+            <button type="button" data-prompt="请用 5 条要点总结本页，并给出一句话结论。">总结本页</button>
+            <button type="button" data-prompt="提取本页最重要的事实、数字、日期和结论；不要猜测。">提取重点</button>
+            <button type="button" data-prompt="解释这篇页面的核心逻辑，并指出读者最容易忽略的两点。">解释逻辑</button>
+          </div>
+        </section>
+        <div id="messages" class="messages"></div>
+      </main>
+
+      <footer class="composer-wrap">
+        <div id="notice" class="notice" hidden></div>
+        <div class="composer">
+          <textarea id="promptInput" rows="1" placeholder="针对当前页面提问…" aria-label="提问"></textarea>
+          <button id="sendButton" class="send-button" type="button" aria-label="发送">↑</button>
+        </div>
+        <div class="composer-foot"><span>Enter 发送 · Shift+Enter 换行</span><button id="clearButton" type="button">清空对话</button></div>
+      </footer>
+    </div>
+    <script src="config.js"></script>
+    <script src="config.local.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

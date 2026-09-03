@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Page Lens — GPT + Kimi",
+  "version": "0.2.0",
+  "description": "Read and discuss the current page with GPT/Kimi subscriptions or your own OpenAI-compatible API.",
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8317/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Page Lens"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html"
+}
