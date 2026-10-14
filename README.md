@@ -1,8 +1,8 @@
 # Page Lens Reader
 
-**把任何网页变成「边读边想」的阅读器。** 在 Chrome 侧栏里分节阅读，每读完一节回答一道理解题，答案附上原文出处，读完导出阅读笔记。支持 GPT / Kimi 订阅（经本地 CLIProxyAPI）或任意 OpenAI 兼容 API。
+**中文** · [English](README.en.md)
 
-*A Chrome side panel that turns any article into a guided reading session: one comprehension checkpoint per section, every answer backed by a verified verbatim quote, plus article chat and selection explanations. Works with GPT/Kimi subscriptions via a local proxy or any OpenAI-compatible API.*
+**把任何网页变成「边读边想」的阅读器。** 在 Chrome 侧栏里分节阅读，每读完一节回答一道理解题，答案附上原文出处，读完导出阅读笔记。支持 GPT / Kimi 订阅（经本地 CLIProxyAPI）或任意 OpenAI 兼容 API。
 
 ![宽屏阅读视图：左侧正文高亮了原文依据，右侧是本节的理解题与解析](docs/reader.png)
 
