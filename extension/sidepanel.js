@@ -1,60 +1,38 @@
 const CUSTOM_PREFIX = "custom::";
+const SESSION_PREFIX = "reader:";
+const SESSION_LIMIT = 20;
 const FALLBACK_DEFAULTS = {
-  baseUrl: "http://127.0.0.1:8317/v1",
-  apiKey: "",
-  maxChars: 60000,
-  customApiBaseUrl: "",
-  customApiKey: "",
-  customApiModel: ""
+  baseUrl: "http://127.0.0.1:8317/v1", apiKey: "", maxChars: 60000,
+  customApiBaseUrl: "", customApiKey: "", customApiModel: ""
 };
-
 const state = {
   config: { ...FALLBACK_DEFAULTS, ...(globalThis.PAGE_LENS_DEFAULTS || {}) },
-  models: [],
-  provider: "all",
-  page: null,
-  pageFingerprint: "",
-  apiMessages: [],
-  busy: false
+  models: [], provider: "all", page: null, pageFingerprint: "", apiMessages: [], busy: false,
+  operation: null, pageLoading: false, modelLoading: false, pageRequest: 0, modelRequest: 0,
+  paragraphs: [], sections: [], questions: [], answers: [], currentSection: 0,
+  started: false, questionShown: false, completed: false, observer: null, noticeSource: ""
 };
-
-const el = {
-  statusDot: document.querySelector("#statusDot"),
-  statusText: document.querySelector("#statusText"),
-  settingsButton: document.querySelector("#settingsButton"),
-  providerTabs: document.querySelector("#providerTabs"),
-  modelSelect: document.querySelector("#modelSelect"),
-  refreshModelsButton: document.querySelector("#refreshModelsButton"),
-  pageTitle: document.querySelector("#pageTitle"),
-  pageUrl: document.querySelector("#pageUrl"),
-  pageMeta: document.querySelector("#pageMeta"),
-  refreshPageButton: document.querySelector("#refreshPageButton"),
-  conversation: document.querySelector("#conversation"),
-  emptyState: document.querySelector("#emptyState"),
-  messages: document.querySelector("#messages"),
-  promptInput: document.querySelector("#promptInput"),
-  sendButton: document.querySelector("#sendButton"),
-  clearButton: document.querySelector("#clearButton"),
-  notice: document.querySelector("#notice")
-};
-
-init().catch((error) => showNotice(error.message));
+const ids = [
+  "statusDot", "statusText", "settingsButton", "expandButton", "providerTabs", "modelSelect",
+  "refreshModelsButton", "pageTitle", "pageUrl", "pageMeta", "refreshPageButton", "notice",
+  "readerTab", "chatTab", "readerView", "chatView", "fontButton", "articleScroll", "articleBody",
+  "sectionGate", "lockedSection", "revealQuestionButton", "readingPosition", "questionCount",
+  "guideDescription", "progressSteps", "readerIntro", "startReadingButton", "cancelGenerationButton", "generationStatus",
+  "waitingCard", "waitingRange", "questionCard", "questionSkill", "questionNumber", "questionText",
+  "questionRange", "answerForm", "answerOptions", "submitAnswerButton", "answerFeedback",
+  "feedbackTitle", "feedbackExplanation", "feedbackEvidence", "evidenceButton", "nextSectionButton",
+  "completionCard", "completionSummary", "reviewList", "restartButton", "regenerateButton", "conversation", "emptyState",
+  "messages", "promptInput", "sendButton", "clearButton"
+];
+const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
+const sourceParam = new URLSearchParams(location.search).get("sourceTab");
+const sourceTab = sourceParam === null ? null : Number(sourceParam);
+init().catch((error) => showNotice(friendlyError(error)));
 
 async function init() {
   bindEvents();
-  const stored = await chrome.storage.local.get([
-    "baseUrl",
-    "apiKey",
-    "maxChars",
-    "selectedModel",
-    "customApiBaseUrl",
-    "customApiKey",
-    "customApiModel"
-  ]);
-  state.config = {
-    ...state.config,
-    ...Object.fromEntries(Object.entries(stored).filter(([, value]) => value !== undefined && value !== ""))
-  };
+  const stored = await chrome.storage.local.get([...Object.keys(FALLBACK_DEFAULTS), "selectedModel"]);
+  state.config = { ...state.config, ...Object.fromEntries(Object.entries(stored).filter(([, value]) => value !== undefined)) };
   await Promise.allSettled([refreshModels(), refreshPage()]);
 }
 
@@ -62,221 +40,608 @@ function bindEvents() {
   el.settingsButton.addEventListener("click", () => chrome.runtime.openOptionsPage());
   el.refreshModelsButton.addEventListener("click", refreshModels);
   el.refreshPageButton.addEventListener("click", refreshPage);
-  el.clearButton.addEventListener("click", clearConversation);
-  el.sendButton.addEventListener("click", sendCurrentPrompt);
+  el.startReadingButton.addEventListener("click", startReading);
+  el.cancelGenerationButton.addEventListener("click", stopOperation);
+  el.regenerateButton.addEventListener("click", regenerateQuestions);
+  el.revealQuestionButton.addEventListener("click", () => revealQuestion(true));
+  el.answerForm.addEventListener("submit", submitAnswer);
+  el.answerOptions.addEventListener("change", () => { el.submitAnswerButton.disabled = false; });
+  el.nextSectionButton.addEventListener("click", nextSection);
+  el.restartButton.addEventListener("click", restartReading);
+  el.evidenceButton.addEventListener("click", locateEvidence);
+  document.addEventListener("keydown", answerShortcut);
+  el.fontButton.addEventListener("click", () => {
+    const large = el.articleBody.classList.toggle("large-text");
+    el.fontButton.setAttribute("aria-pressed", String(large));
+  });
+  el.readerTab.addEventListener("click", () => setView("reader"));
+  el.chatTab.addEventListener("click", () => setView("chat"));
+  el.expandButton.addEventListener("click", async () => {
+    if (!state.page?.tabId) return;
+    try {
+      await chrome.tabs.create({ url: `${chrome.runtime.getURL("sidepanel.html")}?sourceTab=${state.page.tabId}` });
+    } catch (error) { showNotice(friendlyError(error)); }
+  });
+  el.clearButton.addEventListener("click", () => { if (!state.busy) clearConversation(); });
+  el.sendButton.addEventListener("click", () => state.operation?.kind === "chat" ? stopOperation() : sendCurrentPrompt());
   el.promptInput.addEventListener("input", autoGrow);
   el.promptInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       sendCurrentPrompt();
     }
   });
-  el.modelSelect.addEventListener("change", async () => {
-    await chrome.storage.local.set({ selectedModel: el.modelSelect.value });
+  el.modelSelect.addEventListener("change", () => {
+    state.config.selectedModel = el.modelSelect.value;
+    chrome.storage.local.set({ selectedModel: el.modelSelect.value }).catch(() => {});
     clearConversation();
+    updateControls();
   });
   el.providerTabs.addEventListener("click", (event) => {
     const button = event.target.closest("[data-provider]");
-    if (!button) return;
+    if (!button || state.busy) return;
     state.provider = button.dataset.provider;
     document.querySelectorAll(".provider-tab").forEach((tab) => tab.classList.toggle("active", tab === button));
     renderModels();
+    clearConversation();
   });
   document.querySelectorAll("[data-prompt]").forEach((button) => {
     button.addEventListener("click", () => runChat(button.dataset.prompt, button.textContent.trim()));
   });
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local") return;
-    for (const [key, change] of Object.entries(changes)) state.config[key] = change.newValue ?? "";
+    const relevant = Object.keys(changes).filter((key) => key in FALLBACK_DEFAULTS);
+    if (areaName !== "local" || !relevant.length) return;
+    for (const key of relevant) state.config[key] = changes[key].newValue ?? FALLBACK_DEFAULTS[key];
+    cancelOperation();
     clearConversation();
     refreshModels();
+    if (relevant.includes("maxChars")) refreshPage();
   });
 }
 
 async function refreshModels() {
-  setConnection("connecting", "连接代理中");
-  el.refreshModelsButton.disabled = true;
+  const request = ++state.modelRequest;
+  state.modelLoading = true;
+  renderModels();
+  setConnection("connecting", "正在连接阅读模型");
   try {
     const response = await fetch(`${normalizedBaseUrl()}/models`, {
-      headers: proxyAuthHeaders(),
-      signal: AbortSignal.timeout(12000)
+      headers: proxyAuthHeaders(), signal: AbortSignal.timeout(12000)
     });
     if (!response.ok) throw new Error(await apiError(response));
     const payload = await response.json();
-    state.models = (payload.data || []).map((item) => item.id).filter(Boolean).sort(modelSort);
-    if (!state.models.length && !customModelEntry()) throw new Error("代理在线，但还没有可用模型；请先完成 GPT/Kimi 登录");
-    renderModels();
-    const customLabel = customModelEntry() ? " + 自定义 API" : "";
-    setConnection("online", `${state.models.length} 个订阅模型${customLabel}`);
-    hideNotice();
+    if (request !== state.modelRequest) return;
+    state.models = (payload.data || []).map((item) => item.id).filter((id) => typeof id === "string").sort(modelSort);
+    if (!state.models.length && !customModelEntry()) throw new Error("请在设置中连接 GPT、Kimi 或自定义 API");
+    setConnection("online", "阅读模型已就绪");
+    if (state.noticeSource === "models") hideNotice();
   } catch (error) {
+    if (request !== state.modelRequest) return;
     state.models = [];
-    renderModels();
     if (customModelEntry()) {
-      setConnection("online", "自定义 API 已配置");
-      showNotice(`订阅代理未就绪；自定义 API 仍可使用。${error.message}`);
-    } else {
-      setConnection("offline", "接口未就绪");
-      showNotice(error.message);
-    }
+      setConnection("online", "自定义阅读模型已配置");
+      if (state.noticeSource === "models") hideNotice();
+    } else { setConnection("offline", "阅读模型未连接"); showNotice(friendlyError(error), "models"); }
   } finally {
-    el.refreshModelsButton.disabled = false;
+    if (request === state.modelRequest) {
+      state.modelLoading = false;
+      renderModels();
+    }
   }
 }
 
 function renderModels() {
   const selected = el.modelSelect.value || state.config.selectedModel || "";
-  const entries = allModelEntries();
-  const filtered = entries.filter((entry) => state.provider === "all" || entry.provider === state.provider);
+  const entries = allModelEntries().filter((entry) => state.provider === "all" || entry.provider === state.provider);
   el.modelSelect.replaceChildren();
-
-  if (!filtered.length) {
-    const missingCustom = state.provider === "custom" ? "请先在设置中填写 API" : "此分类暂无模型";
-    const option = new Option(entries.length ? missingCustom : "尚未载入模型", "");
-    el.modelSelect.add(option);
-    el.modelSelect.disabled = true;
-    return;
+  if (!entries.length) el.modelSelect.add(new Option("请在设置中连接阅读模型", ""));
+  else {
+    entries.forEach((entry) => el.modelSelect.add(new Option(entry.label, entry.value)));
+    el.modelSelect.value = entries.some((entry) => entry.value === selected) ? selected : entries[0].value;
   }
-
-  el.modelSelect.disabled = false;
-  for (const entry of filtered) el.modelSelect.add(new Option(entry.label, entry.value));
-  const next = filtered.some((entry) => entry.value === selected) ? selected : filtered[0].value;
-  el.modelSelect.value = next;
-  chrome.storage.local.set({ selectedModel: next }).catch(() => {});
+  updateControls();
 }
 
 async function refreshPage() {
-  el.refreshPageButton.disabled = true;
-  el.pageTitle.textContent = "正在读取…";
+  if (state.busy) return;
+  const request = ++state.pageRequest;
+  state.pageLoading = true;
+  updateControls();
   try {
-    const result = await chrome.runtime.sendMessage({ type: "GET_PAGE_CONTEXT" });
+    if (sourceParam !== null && (!Number.isInteger(sourceTab) || sourceTab <= 0)) throw new Error("原网页标识无效，请从网页侧栏重新展开阅读");
+    const message = { type: "GET_PAGE_CONTEXT" };
+    if (sourceTab !== null) message.tabId = sourceTab;
+    const result = await chrome.runtime.sendMessage(message);
+    if (request !== state.pageRequest) return;
     if (!result?.ok) throw new Error(result?.error || "无法读取当前页面");
-    const maxChars = Math.max(5000, Number(state.config.maxChars) || 60000);
-    const nextPage = { ...result.context, text: result.context.text.slice(0, maxChars) };
-    const fingerprint = `${nextPage.tabId}:${nextPage.url}:${nextPage.text.length}`;
-    if (state.pageFingerprint && state.pageFingerprint !== fingerprint) clearConversation();
-    state.page = nextPage;
-    state.pageFingerprint = fingerprint;
-    el.pageTitle.textContent = nextPage.title;
-    el.pageTitle.title = nextPage.title;
-    el.pageUrl.textContent = compactUrl(nextPage.url);
-    el.pageUrl.title = nextPage.url;
-    el.pageMeta.textContent = `${Math.round(nextPage.text.length / 1000)}k 字符`;
-    hideNotice();
+    const maxChars = Math.min(120000, Math.max(5000, Number(state.config.maxChars) || 60000));
+    const rawText = String(result.context.text || "");
+    const page = { ...result.context, text: rawText.slice(0, maxChars), truncated: rawText.length > maxChars };
+    if (!page.text.trim()) throw new Error("当前页面没有可读取的正文");
+    const fingerprint = ReaderCore.fingerprintPage(page);
+    state.page = page;
+    el.pageTitle.textContent = page.title || "未命名文章";
+    el.pageUrl.textContent = compactUrl(page.url);
+    el.pageUrl.title = page.url;
+    const chineseChars = (page.text.match(/[\u3400-\u9fff]/g) || []).length;
+    const wordCount = page.text.split(/\s+/).length;
+    const minutes = Math.max(1, Math.ceil(chineseChars / 400 + (chineseChars ? wordCount / 400 : wordCount / 220)));
+    el.pageMeta.textContent = `约 ${minutes} 分钟阅读 · ${page.text.length.toLocaleString()} 字符${page.truncated ? " · 已按设置截取" : ""}`;
+    if (fingerprint !== state.pageFingerprint) {
+      state.pageFingerprint = fingerprint;
+      state.paragraphs = ReaderCore.splitParagraphs(page.text);
+      state.sections = ReaderCore.createSections(state.paragraphs);
+      clearConversation();
+      resetReader();
+      await restoreSession(fingerprint);
+    }
+    if (state.noticeSource === "page") hideNotice();
   } catch (error) {
+    if (request !== state.pageRequest) return;
     state.page = null;
-    el.pageTitle.textContent = "无法读取当前页面";
-    el.pageUrl.textContent = "";
-    el.pageMeta.textContent = "";
-    showNotice(error.message);
+    state.pageFingerprint = "";
+    state.paragraphs = [];
+    state.sections = [];
+    clearConversation();
+    resetReader();
+    el.pageTitle.textContent = "打开一篇文章，从这里开始。";
+    el.pageUrl.textContent = "等待网页";
+    el.pageMeta.textContent = "切换到普通网页，再点击「重新读取」。";
+    showNotice(friendlyError(error), "page");
   } finally {
-    el.refreshPageButton.disabled = false;
+    if (request === state.pageRequest) { state.pageLoading = false; updateControls(); }
   }
+}
+
+function resetReader() {
+  state.observer?.disconnect();
+  state.started = false;
+  state.completed = false;
+  state.questionShown = false;
+  state.questions = [];
+  state.answers = [];
+  state.currentSection = 0;
+  el.readerIntro.hidden = false;
+  el.waitingCard.hidden = el.questionCard.hidden = el.completionCard.hidden = true;
+  el.startReadingButton.textContent = "开始引导阅读 →";
+  el.generationStatus.textContent = "使用当前模型，依据这篇文章生成问题。";
+  el.guideDescription.textContent = "不只是读完，也真正理解。";
+  renderArticle();
+  renderProgress();
+}
+
+async function startReading() {
+  if (state.busy || state.pageLoading || !state.page || !el.modelSelect.value) return;
+  const operation = beginOperation("questions");
+  el.startReadingButton.textContent = "正在准备问题…";
+  el.generationStatus.textContent = "寻找文章里的关键观点，通常需要片刻。";
+  hideNotice();
+  try {
+    const answer = await requestCompletion(ReaderCore.buildQuestionMessages(state.page, state.sections), operation, null);
+    if (state.operation !== operation) return;
+    state.questions = ReaderCore.parseQuestions(answer, state.sections).map((question) => ReaderCore.shuffleOptions(question));
+    restartReading();
+  } catch (error) {
+    if (state.operation !== operation) return;
+    if (operation.stopped) {
+      el.startReadingButton.textContent = "开始引导阅读 →";
+      el.generationStatus.textContent = "已取消。正文仍可阅读，随时可以重新开始。";
+      return;
+    }
+    el.startReadingButton.textContent = "重新生成问题 ↻";
+    el.generationStatus.textContent = "正文仍可阅读。重试后会重新生成整组问题。";
+    showNotice(`问题未生成：${friendlyError(error)}`);
+  } finally { endOperation(operation); }
+}
+
+function restartReading() {
+  if (!state.questions.length) return;
+  state.started = true;
+  state.completed = false;
+  state.currentSection = 0;
+  state.answers = [];
+  el.readerIntro.hidden = el.completionCard.hidden = true;
+  enterSection();
+}
+
+function enterSection() {
+  state.questionShown = false;
+  el.questionCard.hidden = true;
+  el.waitingCard.hidden = false;
+  el.answerFeedback.hidden = el.nextSectionButton.hidden = true;
+  const section = state.sections[state.currentSection];
+  el.waitingRange.textContent = paragraphRange(section);
+  el.guideDescription.textContent = "读到关键处，停下来检查一下理解。";
+  renderArticle();
+  renderProgress();
+  saveSession();
+  // The sentinel, within the article scroll container, reveals the question only at the section end.
+  state.observer?.disconnect();
+  state.observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) revealQuestion(false);
+  }, { root: el.articleScroll, threshold: 0.6 });
+  state.observer.observe(el.sectionGate);
+}
+
+function renderArticle() {
+  el.articleBody.replaceChildren();
+  const section = state.sections[state.currentSection];
+  const end = state.started && !state.completed && section ? section.end : state.paragraphs.length - 1;
+  const fragment = document.createDocumentFragment();
+  for (let index = 0; index <= end; index++) {
+    const start = state.sections.find((item) => item.start === index);
+    if (state.started && start) {
+      const divider = document.createElement("div");
+      divider.className = "section-divider";
+      divider.textContent = `SECTION ${String(start.id).padStart(2, "0")}`;
+      fragment.append(divider);
+    }
+    const paragraph = document.createElement("p");
+    paragraph.id = `paragraph-${index}`;
+    paragraph.className = "article-paragraph";
+    paragraph.dataset.number = String(index + 1);
+    paragraph.textContent = state.paragraphs[index];
+    fragment.append(paragraph);
+  }
+  el.articleBody.append(fragment);
+  el.sectionGate.hidden = !state.started || state.completed;
+  el.revealQuestionButton.textContent = "读完了，看看问题 →";
+  el.lockedSection.hidden = !state.started || state.completed || state.currentSection === state.sections.length - 1;
+  if (state.started && !state.completed && state.currentSection > 0) {
+    const target = document.getElementById(`paragraph-${section.start}`);
+    el.articleScroll.scrollTo({ top: target.offsetTop - el.articleScroll.offsetTop - 25, behavior: "instant" });
+  } else el.articleScroll.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function renderProgress() {
+  el.progressSteps.replaceChildren();
+  state.sections.forEach((section, index) => {
+    const item = document.createElement("span");
+    const done = Boolean(state.answers[index]);
+    item.className = `progress-step${done ? " done" : state.started && index === state.currentSection ? " current" : ""}`;
+    item.title = `第 ${section.id} 节${done ? " · 已完成" : ""}`;
+    el.progressSteps.append(item);
+  });
+  el.questionCount.textContent = state.sections.length ? `${state.answers.length} / ${state.sections.length}` : "";
+  el.progressSteps.setAttribute("aria-label", `已完成 ${state.answers.length} / ${state.sections.length} 个阅读检查点`);
+  el.readingPosition.textContent = state.completed ? "全文阅读完成" : state.started
+    ? `第 ${state.currentSection + 1} / ${state.sections.length} 节 · ${paragraphRange(state.sections[state.currentSection])}`
+    : state.sections.length ? `${state.sections.length} 个阅读检查点` : "准备阅读";
+}
+
+function revealQuestion(focus) {
+  if (!state.started || state.completed) return;
+  if (!state.questionShown) {
+    state.questionShown = true;
+    state.observer?.disconnect();
+    const question = state.questions[state.currentSection];
+    el.waitingCard.hidden = true;
+    el.questionCard.hidden = false;
+    el.questionSkill.textContent = question.skill;
+    el.questionNumber.textContent = `${state.currentSection + 1} / ${state.questions.length}`;
+    el.questionText.textContent = question.question;
+    el.questionRange.textContent = `${paragraphRange(state.sections[state.currentSection])} · 选择最符合原文的一项 · 可按 A–D 键作答`;
+    el.guideDescription.textContent = `第 ${state.currentSection + 1} 题已出现，试着用刚读到的内容回答。`;
+    el.answerOptions.replaceChildren();
+    const legend = document.createElement("legend");
+    legend.className = "sr-only";
+    legend.textContent = "选择一个答案";
+    el.answerOptions.append(legend);
+    question.options.forEach((option, index) => {
+      const label = document.createElement("label");
+      label.className = "answer-option";
+      const input = document.createElement("input");
+      input.type = "radio"; input.name = "answer"; input.value = String(index);
+      const letter = document.createElement("span");
+      letter.className = "answer-letter";
+      letter.textContent = String.fromCharCode(65 + index);
+      const content = document.createElement("span");
+      content.textContent = option;
+      label.append(input, letter, content);
+      el.answerOptions.append(label);
+    });
+    el.submitAnswerButton.hidden = false;
+    el.submitAnswerButton.disabled = true;
+    el.answerFeedback.hidden = el.nextSectionButton.hidden = true;
+    el.revealQuestionButton.textContent = "问题已出现，去回答 →";
+    saveSession();
+  }
+  if (focus) {
+    el.questionCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    el.questionText.focus({ preventScroll: true });
+  }
+}
+
+function submitAnswer(event) {
+  event.preventDefault();
+  if (!state.questionShown || state.answers[state.currentSection]) return;
+  const checked = el.answerOptions.querySelector("input:checked");
+  if (!checked) return;
+  const selected = Number(checked.value);
+  state.answers[state.currentSection] = { selected, correct: selected === state.questions[state.currentSection].answerIndex };
+  renderAnswer();
+  saveSession();
+}
+
+function renderAnswer() {
+  const question = state.questions[state.currentSection];
+  const { selected, correct } = state.answers[state.currentSection];
+  el.answerOptions.querySelectorAll("input").forEach((input, index) => {
+    input.disabled = true;
+    input.checked = index === selected;
+    input.closest("label").classList.toggle("is-correct", index === question.answerIndex);
+    input.closest("label").classList.toggle("is-wrong", index === selected && !correct);
+  });
+  el.submitAnswerButton.hidden = true;
+  el.answerFeedback.hidden = false;
+  el.answerFeedback.classList.toggle("incorrect", !correct);
+  el.feedbackTitle.textContent = correct ? "✓ 抓住了这个观点。" : `再看一眼这个观点 · 正确答案 ${String.fromCharCode(65 + question.answerIndex)}`;
+  el.feedbackExplanation.textContent = question.explanation;
+  el.feedbackEvidence.textContent = question.evidence;
+  el.nextSectionButton.textContent = state.currentSection === state.sections.length - 1 ? "完成阅读，回顾观点 →" : "继续阅读下一节 →";
+  el.nextSectionButton.hidden = false;
+  renderProgress();
+}
+
+function nextSection() {
+  if (!state.answers[state.currentSection]) return;
+  if (state.currentSection < state.sections.length - 1) {
+    state.currentSection++;
+    enterSection();
+    el.articleScroll.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.articleScroll.focus({ preventScroll: true });
+    return;
+  }
+  state.completed = true;
+  showCompletion();
+  el.completionCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function showCompletion() {
+  state.observer?.disconnect();
+  el.readerIntro.hidden = el.questionCard.hidden = el.waitingCard.hidden = true;
+  el.completionCard.hidden = false;
+  const correct = state.answers.filter((answer) => answer.correct).length;
+  el.completionSummary.textContent = `完成 ${state.questions.length} 个关键观点检查，答对 ${correct} 题。再看一眼值得记住的内容。`;
+  el.reviewList.replaceChildren();
+  state.questions.forEach((question, index) => {
+    const item = document.createElement("div"); item.className = "review-item";
+    const meta = document.createElement("span"); meta.textContent = `${String(index + 1).padStart(2, "0")} · ${question.skill} · ${state.answers[index].correct ? "已答对" : "已复习"}`;
+    const title = document.createElement("div"); title.textContent = question.question;
+    const answer = document.createElement("p"); answer.textContent = question.options[question.answerIndex];
+    item.append(meta, title, answer); el.reviewList.append(item);
+  });
+  renderArticle(); renderProgress();
+  saveSession();
+}
+
+function regenerateQuestions() {
+  if (state.busy) return;
+  forgetSession(state.pageFingerprint);
+  resetReader();
+  startReading();
+}
+
+async function saveSession() {
+  const fingerprint = state.pageFingerprint;
+  if (!fingerprint || !state.started || !chrome.storage.session) return;
+  const { questions, answers, currentSection, questionShown, completed } = state;
+  try {
+    // Session storage keeps generated questions across panel reopenings without writing article quotes to disk.
+    await chrome.storage.session.set({ [SESSION_PREFIX + fingerprint]: { questions, answers, currentSection, questionShown, completed, savedAt: Date.now() } });
+    const saved = await chrome.storage.session.get(null);
+    const stale = Object.keys(saved).filter((key) => key.startsWith(SESSION_PREFIX))
+      .sort((a, b) => (saved[b].savedAt || 0) - (saved[a].savedAt || 0)).slice(SESSION_LIMIT);
+    if (stale.length) await chrome.storage.session.remove(stale);
+  } catch {}
+}
+
+function forgetSession(fingerprint) {
+  if (fingerprint) chrome.storage.session?.remove(SESSION_PREFIX + fingerprint).catch(() => {});
+}
+
+async function restoreSession(fingerprint) {
+  let saved;
+  try { saved = (await chrome.storage.session?.get(SESSION_PREFIX + fingerprint))?.[SESSION_PREFIX + fingerprint]; } catch { return; }
+  const count = state.sections.length;
+  if (fingerprint !== state.pageFingerprint || !Array.isArray(saved?.questions) || saved.questions.length !== count) return;
+  if (!Number.isInteger(saved.currentSection) || saved.currentSection < 0 || saved.currentSection >= count) return;
+  state.questions = saved.questions;
+  state.answers = Array.isArray(saved.answers) ? saved.answers.slice(0, saved.currentSection + 1) : [];
+  state.currentSection = saved.currentSection;
+  state.started = true;
+  el.readerIntro.hidden = true;
+  if (saved.completed && state.answers.length === count) {
+    state.completed = true;
+    showCompletion();
+    return;
+  }
+  enterSection();
+  if (saved.questionShown) {
+    revealQuestion(false);
+    if (state.answers[state.currentSection]) renderAnswer();
+  }
+  el.guideDescription.textContent = "已恢复这篇文章的阅读进度。";
+}
+
+function locateEvidence() {
+  const question = state.questions[state.currentSection];
+  if (!question || !state.answers[state.currentSection]) return;
+  el.articleBody.querySelectorAll(".evidence-highlight").forEach((paragraph) => {
+    paragraph.classList.remove("evidence-highlight");
+    paragraph.textContent = state.paragraphs[Number(paragraph.dataset.number) - 1];
+  });
+  // Quotes may span paragraphs; mark exactly the quoted characters in each one.
+  let first;
+  for (const { index, start, end } of ReaderCore.findEvidenceRanges(state.paragraphs, state.sections[state.currentSection], question.evidence)) {
+    const paragraph = document.getElementById(`paragraph-${index}`);
+    const text = state.paragraphs[index];
+    const mark = document.createElement("mark");
+    mark.className = "evidence-mark";
+    mark.textContent = text.slice(start, end);
+    paragraph.replaceChildren(text.slice(0, start), mark, text.slice(end));
+    paragraph.classList.add("evidence-highlight");
+    first ||= mark;
+  }
+  if (first) {
+    el.articleScroll.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const top = el.articleScroll.scrollTop + first.getBoundingClientRect().top - el.articleScroll.getBoundingClientRect().top;
+    el.articleScroll.scrollTo({ top: top - 48, behavior: "smooth" });
+  }
+}
+
+function answerShortcut(event) {
+  if (el.readerView.hidden || !state.questionShown || state.answers[state.currentSection]) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing || event.target.closest?.("textarea, select, summary")) return;
+  const key = event.key.toLowerCase();
+  const index = "abcd".includes(key) ? "abcd".indexOf(key) : "1234".indexOf(key);
+  const input = key.length === 1 && index >= 0 ? el.answerOptions.querySelectorAll("input")[index] : null;
+  if (!input) return;
+  event.preventDefault();
+  input.checked = true;
+  input.focus();
+  el.submitAnswerButton.disabled = false;
+}
+
+function paragraphRange(section) { return `第 ${section.start + 1}${section.end === section.start ? "" : `–${section.end + 1}`} 段`; }
+function setView(view) {
+  el.readerView.hidden = view !== "reader";
+  el.chatView.hidden = view !== "chat";
+  [[el.readerTab, view === "reader"], [el.chatTab, view === "chat"]].forEach(([tab, active]) => {
+    tab.classList.toggle("active", active); tab.setAttribute("aria-pressed", String(active));
+  });
 }
 
 async function sendCurrentPrompt() {
   const prompt = el.promptInput.value.trim();
-  if (!prompt || state.busy) return;
-  el.promptInput.value = "";
-  autoGrow();
+  if (!prompt || state.busy || state.pageLoading || !state.page || !el.modelSelect.value) return;
+  el.promptInput.value = ""; autoGrow();
   await runChat(prompt, prompt);
 }
 
 async function runChat(prompt, displayPrompt = prompt) {
-  if (state.busy) return;
-  if (!state.page) await refreshPage();
-  if (!state.page) return;
-  const selection = el.modelSelect.value;
-  if (!selection) {
-    showNotice("请先刷新订阅模型，或在设置中填写自定义 API");
-    return;
-  }
-  const route = requestRoute(selection);
-
-  if (!state.apiMessages.length) {
-    state.apiMessages.push({ role: "system", content: pageSystemPrompt(state.page) });
-  }
+  if (state.busy || state.pageLoading) return;
+  if (!state.page || !el.modelSelect.value) { showNotice("请先读取网页并连接阅读模型"); return; }
+  const operation = beginOperation("chat");
+  if (!state.apiMessages.length) state.apiMessages.push({ role: "system", content: pageSystemPrompt(state.page) });
   state.apiMessages.push({ role: "user", content: prompt });
   el.emptyState.hidden = true;
   appendMessage("user", displayPrompt);
   const assistant = appendMessage("assistant", "");
   assistant.bubble.classList.add("streaming");
-  setBusy(true);
   hideNotice();
-
+  let partial = "";
   try {
-    const response = await fetch(`${route.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { ...route.headers, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: route.model,
-        messages: state.apiMessages,
-        stream: true
-      }),
-      signal: AbortSignal.timeout(180000)
+    const answer = await requestCompletion(state.apiMessages, operation, (text) => {
+      if (state.operation !== operation) return;
+      partial = text;
+      PageLensMarkdown.render(assistant.bubble, text); scrollToBottom();
     });
-    if (!response.ok) throw new Error(await apiError(response));
-
-    const contentType = response.headers.get("content-type") || "";
-    let answer = "";
-    if (contentType.includes("text/event-stream") && response.body) {
-      answer = await consumeSse(response.body, (text) => {
-        assistant.bubble.textContent = text;
-        scrollToBottom();
-      });
-    } else {
-      const payload = await response.json();
-      answer = contentFrom(payload?.choices?.[0]?.message?.content);
-      assistant.bubble.textContent = answer;
-    }
-
-    if (!answer.trim()) answer = "模型返回了空内容，请重试。";
-    assistant.bubble.textContent = answer;
+    if (state.operation !== operation) return;
+    if (!answer.trim()) throw new Error("模型返回了空内容，请重试");
+    PageLensMarkdown.render(assistant.bubble, answer);
     state.apiMessages.push({ role: "assistant", content: answer });
   } catch (error) {
+    if (state.operation !== operation) return;
+    if (operation.stopped) {
+      // Keep a stopped partial reply in the conversation so follow-up questions still have its context.
+      if (partial.trim()) state.apiMessages.push({ role: "assistant", content: partial });
+      else { assistant.bubble.textContent = "已停止生成。"; state.apiMessages.pop(); }
+      return;
+    }
     assistant.bubble.textContent = `请求失败：${friendlyError(error)}`;
-    assistant.bubble.closest(".message").classList.add("error");
-    state.apiMessages.pop();
-    showNotice(friendlyError(error));
+    state.apiMessages.pop(); showNotice(friendlyError(error));
   } finally {
     assistant.bubble.classList.remove("streaming");
-    setBusy(false);
-    scrollToBottom();
+    endOperation(operation); scrollToBottom();
   }
+}
+
+async function requestCompletion(messages, operation, onUpdate) {
+  const route = requestRoute(el.modelSelect.value);
+  const response = await fetch(`${route.baseUrl}/chat/completions`, {
+    method: "POST", headers: { ...route.headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: route.model, messages, stream: Boolean(onUpdate) }),
+    signal: AbortSignal.any([operation.controller.signal, AbortSignal.timeout(180000)])
+  });
+  if (!response.ok) throw new Error(await apiError(response));
+  if ((response.headers.get("content-type") || "").includes("text/event-stream") && response.body) {
+    return consumeSse(response.body, onUpdate || (() => {}));
+  }
+  const payload = await response.json();
+  return contentFrom(payload?.choices?.[0]?.message?.content);
 }
 
 async function consumeSse(body, onUpdate) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let answer = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const payload = JSON.parse(data);
-        const delta = contentFrom(payload?.choices?.[0]?.delta?.content);
-        if (delta) {
-          answer += delta;
-          onUpdate(answer);
-        }
-      } catch {
-        // Ignore keep-alive or non-JSON SSE frames.
-      }
-    }
-    if (done) break;
+  const reader = body.getReader(); const decoder = new TextDecoder();
+  let buffer = "", answer = "";
+  function consume(line) {
+    if (!line.trim().startsWith("data:")) return;
+    const data = line.trim().slice(5).trim();
+    if (!data || data === "[DONE]") return;
+    let payload;
+    try { payload = JSON.parse(data); } catch { return; }
+    if (payload.error) throw new Error(payload.error.message || "模型流式响应失败");
+    const delta = contentFrom(payload?.choices?.[0]?.delta?.content);
+    if (delta) { answer += delta; onUpdate(answer); }
   }
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n"); buffer = lines.pop() || "";
+      for (const line of lines) consume(line);
+      if (done) { if (buffer) consume(buffer); break; }
+    }
+  } finally { reader.releaseLock(); }
   return answer;
 }
+
+function beginOperation(kind) {
+  const operation = { kind, controller: new AbortController(), stopped: false };
+  state.operation = operation; state.busy = true; updateControls(); return operation;
+}
+function endOperation(operation) {
+  if (state.operation !== operation) return;
+  state.operation = null; state.busy = false; updateControls();
+}
+function stopOperation() {
+  if (!state.operation) return;
+  state.operation.stopped = true;
+  state.operation.controller.abort();
+}
+function cancelOperation() {
+  state.operation?.controller.abort(); state.operation = null; state.busy = false;
+  if (!state.started) {
+    el.startReadingButton.textContent = "开始引导阅读 →";
+    el.generationStatus.textContent = "使用当前模型，依据这篇文章生成问题。";
+  }
+  updateControls();
+}
+function updateControls() {
+  const ready = Boolean(state.page && el.modelSelect.value);
+  const chatting = state.operation?.kind === "chat";
+  el.startReadingButton.disabled = state.busy || state.pageLoading || !ready;
+  el.cancelGenerationButton.hidden = state.operation?.kind !== "questions";
+  el.regenerateButton.disabled = state.busy || state.pageLoading || !ready;
+  el.sendButton.disabled = !chatting && (state.busy || state.pageLoading || !ready);
+  el.sendButton.classList.toggle("stop", chatting);
+  el.sendButton.textContent = chatting ? "■" : "↑";
+  el.sendButton.setAttribute("aria-label", chatting ? "停止生成" : "发送");
+  el.modelSelect.disabled = state.busy || !el.modelSelect.value;
+  el.refreshModelsButton.disabled = state.busy || state.modelLoading;
+  el.refreshPageButton.disabled = state.busy || state.pageLoading;
+  el.expandButton.disabled = !state.page || sourceParam !== null;
+  el.clearButton.disabled = state.busy;
+  document.querySelectorAll(".provider-tab").forEach((button) => { button.disabled = state.busy; });
+  document.querySelectorAll("[data-prompt]").forEach((button) => { button.disabled = state.busy || state.pageLoading || !ready; });
+}
+function clearConversation() { state.apiMessages = []; el.messages.replaceChildren(); el.emptyState.hidden = false; }
+function setConnection(status, text) { el.statusDot.className = `status-dot ${status}`; el.statusText.textContent = text; }
+function showNotice(message, source = "general") { state.noticeSource = source; el.notice.textContent = message; el.notice.hidden = false; }
+function hideNotice() { state.noticeSource = ""; el.notice.hidden = true; el.notice.textContent = ""; }
+function autoGrow() { el.promptInput.style.height = "auto"; el.promptInput.style.height = `${Math.min(el.promptInput.scrollHeight, 120)}px`; }
+function scrollToBottom() { requestAnimationFrame(() => { el.conversation.scrollTop = el.conversation.scrollHeight; }); }
 
 function contentFrom(value) {
   if (typeof value === "string") return value;
@@ -301,6 +666,7 @@ function pageSystemPrompt(page) {
   ].filter(Boolean).join("\n");
 }
 
+
 function appendMessage(role, text) {
   const item = document.createElement("article");
   item.className = `message ${role}`;
@@ -308,7 +674,7 @@ function appendMessage(role, text) {
   label.className = "message-role";
   label.textContent = role === "user" ? "你" : modelLabel(el.modelSelect.value || "AI");
   const bubble = document.createElement("div");
-  bubble.className = "bubble";
+  bubble.className = role === "assistant" ? "bubble rich" : "bubble";
   bubble.textContent = text;
   item.append(label, bubble);
   el.messages.append(item);
@@ -316,43 +682,6 @@ function appendMessage(role, text) {
   return { item, bubble };
 }
 
-function clearConversation() {
-  state.apiMessages = [];
-  el.messages.replaceChildren();
-  el.emptyState.hidden = false;
-  hideNotice();
-}
-
-function setBusy(busy) {
-  state.busy = busy;
-  el.sendButton.disabled = busy;
-  el.modelSelect.disabled = busy || !allModelEntries().length;
-  el.refreshPageButton.disabled = busy;
-}
-
-function setConnection(status, text) {
-  el.statusDot.className = `status-dot ${status === "connecting" ? "" : status}`;
-  el.statusText.textContent = text;
-}
-
-function showNotice(message) {
-  el.notice.textContent = message;
-  el.notice.hidden = false;
-}
-
-function hideNotice() {
-  el.notice.hidden = true;
-  el.notice.textContent = "";
-}
-
-function autoGrow() {
-  el.promptInput.style.height = "auto";
-  el.promptInput.style.height = `${Math.min(el.promptInput.scrollHeight, 120)}px`;
-}
-
-function scrollToBottom() {
-  requestAnimationFrame(() => { el.conversation.scrollTop = el.conversation.scrollHeight; });
-}
 
 function proxyAuthHeaders() {
   return state.config.apiKey ? { Authorization: `Bearer ${state.config.apiKey}` } : {};
@@ -422,17 +751,13 @@ function compactUrl(value) {
   }
 }
 
-async function apiError(response) {
-  let detail = "";
-  try {
-    const payload = await response.json();
-    detail = payload?.error?.message || payload?.message || "";
-  } catch {
-    detail = await response.text().catch(() => "");
-  }
-  return `接口返回 ${response.status}${detail ? `：${detail}` : ""}`;
-}
 
+async function apiError(response) {
+  const raw = await response.text().catch(() => "");
+  let detail = raw;
+  try { const payload = JSON.parse(raw); detail = payload?.error?.message || payload?.message || ""; } catch {}
+  return `接口返回 ${response.status}${detail ? `：${String(detail).slice(0, 300)}` : ""}`;
+}
 function friendlyError(error) {
   if (error?.name === "TimeoutError") return "请求超时，请稍后重试";
   if (/Failed to fetch/i.test(error?.message || "")) return "无法连接所选接口，请检查地址、密钥和网络权限";

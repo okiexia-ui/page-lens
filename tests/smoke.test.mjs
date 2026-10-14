@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 const javascriptFiles = [
   "extension/config.js",
   "extension/background.js",
+  "extension/reader-core.js",
+  "extension/markdown.js",
   "extension/sidepanel.js",
   "extension/options.js"
 ];
@@ -37,5 +39,7 @@ function checkReferencedIds(htmlPath, jsPath) {
   const javascript = readFileSync(jsPath, "utf8");
   const htmlIds = new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
   const referencedIds = Array.from(javascript.matchAll(/querySelector\("#([^"]+)"\)/g), (match) => match[1]);
+  const idList = javascript.match(/const ids = \[([\s\S]*?)\];/);
+  if (idList) referencedIds.push(...Array.from(idList[1].matchAll(/"([^"]+)"/g), (match) => match[1]));
   for (const id of referencedIds) assert.ok(htmlIds.has(id), `${jsPath} references missing #${id} in ${htmlPath}`);
 }

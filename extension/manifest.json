@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Page Lens — GPT + Kimi",
+  "name": "Page Lens Reader — GPT + Kimi",
   "version": "0.2.0",
-  "description": "Read and discuss the current page with GPT/Kimi subscriptions or your own OpenAI-compatible API.",
+  "description": "Read web articles with guided questions about key ideas, source evidence, and GPT/Kimi or your own API.",
   "permissions": [
     "sidePanel",
     "tabs",
@@ -18,7 +18,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open Page Lens"
+    "default_title": "Open Page Lens Reader"
   },
   "side_panel": {
     "default_path": "sidepanel.html"

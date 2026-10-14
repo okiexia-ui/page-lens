@@ -1,0 +1,156 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+
+const background = readFileSync(new URL("../extension/background.js", import.meta.url), "utf8");
+
+// A small DOM fixture keeps these tests dependency-free. It deliberately has no
+// innerText: reading a detached clone must not be needed to find paragraphs.
+function element(tagName, children = [], attributes = {}, style = {}) {
+  const node = {
+    nodeType: 1,
+    tagName: tagName.toUpperCase(),
+    style,
+    attributes,
+    childNodes: children.map((child) => typeof child === "string"
+      ? { nodeType: 3, nodeValue: child }
+      : child),
+    parentElement: null,
+    matches(selectors) {
+      return selectors.split(",").some((selector) => {
+        selector = selector.trim();
+        const attribute = selector.match(/^\[([^=\]]+)(?:='([^']*)')?\]$/);
+        return attribute
+          ? Object.hasOwn(attributes, attribute[1]) &&
+            (attribute[2] === undefined || attributes[attribute[1]] === attribute[2])
+          : tagName.toLowerCase() === selector.toLowerCase();
+      });
+    }
+  };
+  for (const child of node.childNodes) child.parentElement = node;
+  return node;
+}
+
+function environment(body, options = {}) {
+  const calls = { query: [], get: [], execute: [] };
+  const activeTab = options.activeTab || { id: 41, url: "https://example.com/article", favIconUrl: "https://example.com/icon.png" };
+  const sourceTab = options.sourceTab || { id: 12, url: "https://example.com/source" };
+  let listener;
+  function descendants(node) {
+    return node ? [node, ...node.childNodes.filter((child) => child.nodeType === 1).flatMap(descendants)] : [];
+  }
+  const document = {
+    body,
+    title: "A short reading",
+    documentElement: { lang: "en" },
+    querySelectorAll(selector) {
+      return descendants(body).filter((node) => node.matches(selector));
+    },
+    querySelector(selector) {
+      if (selector === "meta[name='description']") return { content: " A useful description " };
+      if (selector === "link[rel='canonical']") return { href: "https://example.com/canonical" };
+      return null;
+    }
+  };
+  const context = vm.createContext({
+    document,
+    location: { href: activeTab.url },
+    Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
+    URL,
+    getComputedStyle(node) {
+      return { display: "block", visibility: "visible", ...node.style };
+    },
+    chrome: {
+      sidePanel: { async setPanelBehavior() {} },
+      runtime: {
+        onInstalled: { addListener() {} },
+        onStartup: { addListener() {} },
+        onMessage: { addListener(callback) { listener = callback; } }
+      },
+      tabs: {
+        async query(query) { calls.query.push(query); return [activeTab]; },
+        async get(tabId) { calls.get.push(tabId); return sourceTab; }
+      },
+      scripting: {
+        async executeScript(request) {
+          calls.execute.push(request);
+          return [{ result: request.func() }];
+        }
+      }
+    }
+  });
+  vm.runInContext(background, context);
+  return { context, calls, listener };
+}
+
+const first = "A reader remembers an idea more clearly when they pause to explain it in their own words.";
+const second = "A question about the author's central claim can reveal a gap that simply rereading would miss.";
+const article = element("article", [
+  element("h1", ["Read and reflect"]),
+  element("div", [
+    element("p", ["A reader remembers an idea more clearly when they ", element("em", ["pause"]), " to explain it in their own words."]),
+    element("p", [second])
+  ]),
+  element("nav", ["Previous | Next"]),
+  element("p", ["Invisible text"], {}, { display: "none" }),
+  element("p", ["Screen reader hidden text"], { "aria-hidden": "true" }),
+  element("script", ["script must not appear"])
+]);
+const body = element("body", [
+  element("nav", ["A very long site navigation. ".repeat(100)]),
+  element("div", [element("article", ["Hidden article. ".repeat(500)])], {}, { display: "none" }),
+  article,
+  element("div", ["Unrelated site text. ".repeat(100)])
+]);
+const { context, calls, listener } = environment(body);
+const result = context.extractReadablePage();
+assert.equal(result.text, `Read and reflect\n\n${first}\n\n${second}`,
+  "Short articles must win over the larger page, preserve paragraph boundaries, and omit hidden or navigation content");
+assert.equal(result.title, "A short reading");
+assert.equal(result.url, "https://example.com/canonical");
+assert.equal(result.language, "en");
+assert.equal(result.lang, "en");
+assert.equal(result.description, "A useful description");
+assert.ok(Number.isFinite(Date.parse(result.capturedAt)));
+
+const main = environment(element("body", [
+  element("article", ["A tiny teaser"]),
+  element("section", [element("p", [first]), element("p", [second])], { role: "main" }),
+  element("footer", ["Copyright"])
+]));
+assert.equal(main.context.extractReadablePage().text, `${first}\n\n${second}`);
+
+const fallback = environment(element("body", [
+  element("div", [element("p", ["One", element("br"), "line"]), element("p", ["Second paragraph."])]),
+  element("aside", ["Related stories"])
+]));
+assert.equal(fallback.context.extractReadablePage().text, "One\nline\n\nSecond paragraph.");
+assert.equal(environment(null).context.extractReadablePage(), null);
+assert.equal(environment(element("body", [element("p", ["x".repeat(120005)])])).context.extractReadablePage().text.length, 120000);
+
+const active = await context.getPageContext();
+assert.equal(active.tabId, 41);
+assert.equal(calls.query.length, 1);
+assert.equal(calls.get.length, 0);
+assert.equal(calls.execute[0].target.tabId, 41);
+
+const response = await new Promise((resolve) => {
+  assert.equal(listener({ type: "GET_PAGE_CONTEXT", tabId: 12 }, {}, resolve), true);
+});
+assert.equal(response.ok, true);
+assert.equal(response.context.tabId, 12);
+assert.deepEqual(calls.get, [12]);
+assert.equal(calls.query.length, 1, "An explicit source tab must not query the active Reader tab");
+assert.equal(calls.execute[1].target.tabId, 12);
+for (const invalidId of [0, -1, 1.5, "12", null]) {
+  await assert.rejects(context.getPageContext(invalidId), /原网页标签无效/);
+}
+assert.equal(listener({ type: "OTHER" }, {}, () => {}), false);
+
+const blocked = environment(body, { activeTab: { id: 3, url: "chrome://extensions" } });
+await assert.rejects(blocked.context.getPageContext(), /系统页面不允许/);
+assert.equal(blocked.calls.execute.length, 0);
+const empty = environment(element("body", [element("nav", ["Menu"])]));
+await assert.rejects(empty.context.getPageContext(), /没有可读取的正文/);
+
+console.log("Reader page-capture checks passed.");

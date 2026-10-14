@@ -1,0 +1,327 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import "../extension/reader-core.js";
+
+// This opt-in browser test uses an existing Playwright installation; no package dependency is added.
+const runtime = process.env.PLAYWRIGHT_MODULE || join(homedir(), ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs");
+const { chromium } = await import(pathToFileURL(resolve(runtime)).href);
+const extensionDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../extension");
+const paragraphs = [
+  "When a city grows, the ground often changes from soil to concrete. Rain that once soaked into gardens and fields now runs quickly across roads and roofs. A drain can carry some of that water away, but a heavy storm may send more water into the system than its pipes can hold. The result is not simply a problem of too much rain. It is also a problem of how the city has chosen to make room for water. Understanding that distinction changes the solutions people are willing to consider.",
+  "For many years, engineers tried to move rainwater out of cities as quickly as possible. Bigger pipes and deeper channels seemed to offer a straightforward answer. These systems remain useful, especially around essential buildings. Yet sending water downstream faster can transfer a flood from one neighborhood to another. A solution that works for a single street may therefore create trouble elsewhere. Planning for the whole watershed requires asking where the water goes after it leaves the place we can see.",
+  "A different approach begins by giving rain somewhere to pause. Rain gardens collect runoff in shallow planted areas, while permeable paving lets water pass into the ground below. Trees intercept rainfall in their leaves and draw moisture through their roots. None of these measures can stop every flood on its own. Together, however, they can reduce the amount of water reaching a drain at the same moment. The purpose is to slow and share the flow instead of forcing every drop toward a pipe immediately.",
+  "The benefits of these spaces extend beyond storm protection. A planted street can offer shade during a hot afternoon and provide habitat for birds and insects. Residents may find a small public garden more inviting than an empty paved corner. These additional benefits matter because land in a city is limited and expensive. A project that serves several needs can make a stronger case for public investment, though its success still depends on careful design and regular maintenance by people who understand the local conditions.",
+  "Choosing where to build matters as much as choosing what to build. Some neighborhoods face repeated flooding and have few trees or parks, while others already enjoy generous green space. If new projects go only to places with the loudest advocates, investment can widen existing differences. Planners need to combine flood maps with knowledge from local residents. People who travel the same streets every day may know which paths become impassable and which homes receive water long before those details appear in an official report.",
+  "A resilient city therefore needs more than a collection of attractive rain gardens. It needs a connected plan that combines pipes, open ground, public spaces, and the experience of its residents. The plan must also be checked after storms so that failures become opportunities to improve. Making room for water is not a promise that flooding will disappear. It is a commitment to reduce avoidable harm while creating places that remain useful and welcoming when the weather is dry. The strongest approach learns from both the landscape and the people living in it."
+];
+const sourcePage = {
+  title: "Why a city needs room for rain",
+  url: "https://example.com/reading/room-for-rain",
+  tabId: 42,
+  text: paragraphs.join("\n\n"),
+  description: "A reading on urban design, evidence, and shared public space.",
+  language: "en"
+};
+const readingSections = globalThis.ReaderCore.createSections(globalThis.ReaderCore.splitParagraphs(sourcePage.text));
+assert.equal(readingSections.length, 3, "fixture must provide three reading checkpoints");
+const questions = readingSections.map((section, index) => ({
+  sectionId: section.id,
+  skill: ["主旨理解", "因果推理", "论据分析"][index],
+  question: ["作者为什么认为城市内涝不仅仅是雨量的问题？", "雨水花园与透水路面共同发挥作用的关键是什么？", "作者为什么主张让当地居民参与雨水规划？"][index],
+  options: [
+    ["城市地表和排水方式也会影响雨水去向。", "城市中的降雨总比乡村更大。", "只要扩大排水管道，所有问题都会消失。", "混凝土能够吸收绝大部分雨水。"],
+    ["它们让雨水暂时停留，减缓流入排水系统的速度。", "它们可以让所有洪水永远消失。", "它们完全不需要维护。", "它们的唯一价值是美化街道。"],
+    ["居民的日常经验能够补充地图和报告中的信息。", "居民可以替代所有专业规划人员。", "只有声音最大的社区才需要投资。", "规划只需要考虑晴天的公共空间。"]
+  ][index],
+  answerIndex: 0,
+  explanation: ["作者把硬化地表与雨水快速汇集联系起来，强调城市的设计选择也会影响洪水风险。", "这些设施共同降低同一时刻进入排水管道的水量，从而分散排水压力。", "作者强调，居民熟悉每天经过的街道，能提供官方资料尚未记录的具体情况。 "][index],
+  evidence: section.text.slice(0, section.text.indexOf(".") + 1)
+}));
+
+const server = createServer(async (request, response) => {
+  try {
+    const pathname = new URL(request.url, "http://localhost").pathname;
+    if (pathname === "/config.local.js") {
+      response.writeHead(200, { "Content-Type": "text/javascript" }).end("// Private local config intentionally excluded from tests.\n");
+      return;
+    }
+    const filename = resolve(extensionDirectory, `.${pathname}`);
+    if (!filename.startsWith(extensionDirectory + sep)) throw new Error("Invalid path");
+    const content = await readFile(filename);
+    response.writeHead(200, { "Content-Type": filename.endsWith(".html") ? "text/html" : filename.endsWith(".css") ? "text/css" : "text/javascript" }).end(content);
+  } catch {
+    response.writeHead(404).end();
+  }
+});
+await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+const origin = `http://127.0.0.1:${server.address().port}`;
+let browser;
+
+async function openFixture(width, responses = []) {
+  const context = await browser.newContext({ viewport: { width, height: 980 }, reducedMotion: "reduce" });
+  const page = await context.newPage();
+  const errors = [];
+  const requests = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await context.addInitScript(({ source, origin }) => {
+    const stored = {
+      baseUrl: "https://proxy.test/v1",
+      customApiBaseUrl: "https://reader.test/v1",
+      customApiModel: "fixture",
+      selectedModel: "custom::fixture",
+      maxChars: 60000
+    };
+    window.__fixtureMessages = [];
+    window.__fixtureOpenedTabs = [];
+    window.__fixtureDeferPage = false;
+    window.__fixtureReleasePage = null;
+    window.chrome = {
+      storage: {
+        local: {
+          get: async () => ({ ...stored }),
+          set: async (values) => { Object.assign(stored, values); }
+        },
+        // Backed by the tab's sessionStorage so reading progress survives a reload, like chrome.storage.session.
+        session: {
+          get: async (keys) => {
+            const all = JSON.parse(sessionStorage.getItem("fixtureSession") || "{}");
+            if (keys === null || keys === undefined) return all;
+            return Object.fromEntries([keys].flat().filter((key) => key in all).map((key) => [key, all[key]]));
+          },
+          set: async (values) => {
+            sessionStorage.setItem("fixtureSession", JSON.stringify({ ...JSON.parse(sessionStorage.getItem("fixtureSession") || "{}"), ...values }));
+          },
+          remove: async (keys) => {
+            const all = JSON.parse(sessionStorage.getItem("fixtureSession") || "{}");
+            [keys].flat().forEach((key) => delete all[key]);
+            sessionStorage.setItem("fixtureSession", JSON.stringify(all));
+          }
+        },
+        onChanged: { addListener() {} }
+      },
+      runtime: {
+        getURL: (path) => `${origin}/${path}`,
+        openOptionsPage: async () => {},
+        sendMessage: async (message) => {
+          window.__fixtureMessages.push(message);
+          if (window.__fixtureDeferPage) await new Promise((resolve) => { window.__fixtureReleasePage = resolve; });
+          return { ok: true, context: structuredClone(source) };
+        }
+      },
+      tabs: {
+        create: async (details) => { window.__fixtureOpenedTabs.push(details); return { id: 43, ...details }; },
+        query: async () => [{ id: 42, url: source.url }]
+      }
+    };
+  }, { source: sourcePage, origin });
+  await context.route("**/*", async (route) => {
+    const request = route.request();
+    const url = request.url();
+    if (url.startsWith(origin + "/")) return route.continue();
+    if (url.endsWith("/models")) return route.fulfill({ json: { data: [] } });
+    if (url === "https://reader.test/v1/chat/completions") {
+      const payload = request.postDataJSON();
+      requests.push(payload);
+      if (payload.stream) {
+        if (responses[0] === "hang") { responses.shift(); return new Promise(() => {}); }
+        return route.fulfill({
+          contentType: "text/event-stream",
+          body: `data: ${JSON.stringify({ choices: [{ delta: { content: "文章强调**为雨水留出空间**，" } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: "并让居民的经验参与规划。\n\n- 减缓水流\n- 共享空间" } }] })}\n\ndata: [DONE]\n\n`
+        });
+      }
+      const next = responses.shift();
+      if (next === "hang") return new Promise(() => {});
+      if (next === "unavailable") return route.fulfill({ status: 503, json: { error: { message: "Fixture model temporarily unavailable" } } });
+      const content = next === "malformed" ? '{"questions":[]}' : JSON.stringify({ questions });
+      return route.fulfill({ json: { choices: [{ message: { content } }] } });
+    }
+    errors.push(`Unexpected outbound request: ${url}`);
+    return route.abort();
+  });
+  await page.goto(`${origin}/sidepanel.html?sourceTab=42`);
+  await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
+  return { context, page, errors, requests };
+}
+
+async function revealByReading(page) {
+  await page.locator("#articleScroll").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await page.locator("#questionCard").waitFor({ state: "visible" });
+}
+
+const option = (page, text) => page.locator(".answer-option", { hasText: text });
+
+async function assertNoOverflow(page, label) {
+  const dimensions = await page.evaluate(() => ({ viewport: innerWidth, width: document.documentElement.scrollWidth }));
+  assert.ok(dimensions.width <= dimensions.viewport + 1, `${label}: horizontal overflow (${dimensions.width} > ${dimensions.viewport})`);
+}
+
+try {
+  browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
+  for (const width of [1280, 380]) {
+    const { context, page, errors, requests } = await openFixture(width);
+    await assertNoOverflow(page, `${width}px introduction`);
+    assert.equal(await page.locator("#articleBody .article-paragraph").count(), paragraphs.length);
+    await page.locator("#startReadingButton").click();
+    await page.locator("#waitingCard").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#nextSectionButton").isVisible(), false, "next section must be gated before an answer");
+
+    for (let index = 0; index < readingSections.length; index += 1) {
+      await revealByReading(page);
+      assert.match(await page.locator("#questionText").textContent(), new RegExp(questions[index].question));
+      assert.equal(await page.locator("#submitAnswerButton").isDisabled(), true);
+      assert.equal(await page.locator("#nextSectionButton").isVisible(), false);
+      const unlockedParagraphs = await page.locator("#articleBody .article-paragraph:visible").count();
+      assert.equal(unlockedParagraphs, readingSections[index].end + 1, "unread sections must remain gated");
+      if (width === 1280 && index === 0) {
+        await page.locator("#articleScroll").evaluate((element) => element.scrollTo({ top: 0, behavior: "instant" }));
+        await page.screenshot({ path: "/private/tmp/page-lens-reader-question.png", fullPage: true });
+      }
+      const shown = await page.locator(".answer-option").allTextContents();
+      assert.deepEqual(shown.map((text) => text.slice(1)).sort(), [...questions[index].options].sort(), "shuffling must keep every option");
+      const choice = questions[index].options[index === 0 ? 1 : 0];
+      if (width === 380 && index === 1) {
+        // Letter shortcuts select an option; Enter on the focused option submits it.
+        const letter = String.fromCharCode(97 + shown.findIndex((text) => text.endsWith(choice)));
+        await page.keyboard.press(letter);
+        assert.equal(await option(page, choice).locator("input").isChecked(), true);
+        assert.equal(await page.locator("#submitAnswerButton").isDisabled(), false);
+        await page.keyboard.press("Enter");
+      } else {
+        await option(page, choice).click();
+        assert.equal(await page.locator("#submitAnswerButton").isDisabled(), false);
+        await page.locator("#submitAnswerButton").click();
+      }
+      await page.locator("#answerFeedback").waitFor({ state: "visible" });
+      assert.equal(await page.locator(index === 0 ? ".answer-option.is-wrong" : ".answer-option.is-correct").count() > 0, true);
+      if (index === 0) {
+        const answerColors = await page.evaluate(() => [".answer-option.is-wrong", ".answer-option.is-correct"].map((selector) => getComputedStyle(document.querySelector(selector)).backgroundColor));
+        assert.notEqual(answerColors[0], answerColors[1], "wrong and correct options need visually distinct feedback");
+      }
+      assert.equal((await page.locator("#feedbackEvidence").textContent()).trim(), questions[index].evidence);
+      assert.ok((await page.locator("#feedbackExplanation").textContent()).includes(questions[index].explanation.trim()));
+      await page.locator("#evidenceButton").click();
+      await page.locator(".article-paragraph.evidence-highlight").first().waitFor({ state: "visible" });
+      assert.equal(await page.locator(".evidence-mark").allTextContents().then((parts) => parts.join(" ")), questions[index].evidence, "only the quoted text is marked");
+      await page.waitForFunction(() => {
+        const article = document.querySelector("#articleScroll").getBoundingClientRect();
+        const evidence = document.querySelector(".article-paragraph.evidence-highlight").getBoundingClientRect();
+        return evidence.top >= article.top - 1 && evidence.top < article.bottom - 20;
+      });
+      await assertNoOverflow(page, `${width}px answered question`);
+      if (index === 0) await page.screenshot({ path: `/private/tmp/page-lens-reader-${width === 1280 ? "wide" : "narrow"}.png`, fullPage: true });
+      if (width === 1280 && index === 0) {
+        const generated = requests.length;
+        await page.reload();
+        await page.locator("#answerFeedback").waitFor({ state: "visible" });
+        assert.equal(requests.length, generated, "reopening the reader must reuse the saved questions");
+        assert.equal(await page.locator("#readerIntro").isVisible(), false);
+        assert.equal(await option(page, choice).locator("input").isChecked(), true, "restored answer keeps the chosen option");
+        assert.equal(await page.locator(".answer-option.is-wrong").count(), 1);
+        assert.match(await page.locator("#guideDescription").textContent(), /恢复/);
+      }
+      await page.locator("#nextSectionButton").click();
+    }
+
+    await page.locator("#completionCard").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#reviewList .review-item").count(), readingSections.length);
+    assert.match(await page.locator("#completionSummary").textContent(), /2/);
+    await page.locator("#restartButton").click();
+    await page.locator("#completionCard").waitFor({ state: "hidden" });
+    await revealByReading(page);
+    assert.equal(await page.locator("#answerFeedback").isVisible(), false, "restart must clear prior answer feedback");
+
+    await page.locator("#chatTab").click();
+    await page.locator("#promptInput").fill("请用一句话解释核心观点。");
+    await page.locator("#sendButton").click();
+    await page.waitForFunction(() => document.querySelector("#messages .assistant .bubble")?.textContent.includes("居民的经验"));
+    assert.equal(requests.filter((request) => request.stream).length, 1);
+    assert.equal(await page.locator("#messages .assistant .bubble strong").textContent(), "为雨水留出空间");
+    assert.equal(await page.locator("#messages .assistant .bubble li").count(), 2);
+    assert.equal((await page.locator("#messages .assistant .bubble").textContent()).includes("**"), false);
+    await assertNoOverflow(page, `${width}px chat`);
+
+    if (width === 1280) {
+      await page.locator("#clearButton").click();
+      await page.locator("#readerTab").click();
+      await page.evaluate(() => { window.__fixtureDeferPage = true; });
+      await page.locator("#refreshPageButton").click();
+      await page.waitForFunction(() => typeof window.__fixtureReleasePage === "function");
+      await page.locator("#chatTab").click();
+      const beforeRecapture = requests.length;
+      await page.locator("#promptInput").fill("等待读取完成后再发送。");
+      await page.locator("#promptInput").press("Enter");
+      assert.equal(await page.locator("#sendButton").isDisabled(), true);
+      assert.equal(await page.locator("[data-prompt]").first().isDisabled(), true);
+      await page.locator("[data-prompt]").first().dispatchEvent("click");
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(requests.length, beforeRecapture, "page recapture must block Enter and quick prompts from sending stale context");
+      assert.equal(await page.locator("#promptInput").inputValue(), "等待读取完成后再发送。", "blocked send must preserve the draft");
+      await page.evaluate(() => { window.__fixtureDeferPage = false; window.__fixtureReleasePage(); });
+      await page.waitForFunction(() => !document.querySelector("#refreshPageButton").disabled);
+    }
+
+    const messages = await page.evaluate(() => window.__fixtureMessages);
+    assert.ok(messages.some((message) => message.type === "GET_PAGE_CONTEXT" && message.tabId === 42), "expanded reader must request the original source tab");
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log(`Reader UI flow, evidence, chat, and responsive checks passed at ${width}px.`);
+  }
+
+  {
+    const responses = ["hang"];
+    const { context, page, errors, requests } = await openFixture(1280, responses);
+    await page.locator("#startReadingButton").click();
+    await page.locator("#cancelGenerationButton").click();
+    await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
+    assert.equal(await page.locator("#cancelGenerationButton").isVisible(), false);
+    assert.equal(await page.locator("#notice").isVisible(), false, "a deliberate cancel is not an error");
+    assert.match(await page.locator("#generationStatus").textContent(), /已取消/);
+    await page.locator("#startReadingButton").click();
+    await page.locator("#waitingCard").waitFor({ state: "visible" });
+    assert.equal(requests.length, 2);
+    await page.locator("#articleScroll").evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await page.locator("#questionCard").waitFor({ state: "visible" });
+
+    responses.push("hang");
+    await page.locator("#chatTab").click();
+    await page.locator("#promptInput").fill("这个问题会被停止。");
+    await page.locator("#sendButton").click();
+    await page.waitForFunction(() => document.querySelector("#sendButton").classList.contains("stop"));
+    assert.equal(await page.locator("#sendButton").getAttribute("aria-label"), "停止生成");
+    await page.locator("#sendButton").click();
+    await page.waitForFunction(() => document.querySelector("#messages .assistant .bubble")?.textContent === "已停止生成。");
+    assert.equal(await page.locator("#sendButton").getAttribute("aria-label"), "发送");
+    await page.locator("#promptInput").fill("重新提问。");
+    await page.locator("#sendButton").click();
+    await page.waitForFunction(() => document.querySelectorAll("#messages .assistant .bubble li").length === 2);
+    assert.deepEqual(requests.at(-1).messages.map((message) => message.role), ["system", "user"], "a stopped empty reply must not leave a dangling question");
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log("Reader UI cancel passed for question generation and chat.");
+  }
+
+  for (const failure of ["malformed", "unavailable"]) {
+    const { context, page, errors, requests } = await openFixture(1280, [failure]);
+    await page.locator("#startReadingButton").click();
+    await page.locator("#notice").waitFor({ state: "visible" });
+    await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
+    assert.equal(await page.locator("#questionCard").isVisible(), false, "failed generation must not fabricate a question");
+    await page.locator("#startReadingButton").click();
+    await page.locator("#waitingCard").waitFor({ state: "visible" });
+    await revealByReading(page);
+    assert.equal(requests.length, 2, "retry must issue a fresh generation request");
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log(`Reader UI recovery passed for ${failure} API response.`);
+  }
+} finally {
+  await browser?.close();
+  await new Promise((resolve) => server.close(resolve));
+}

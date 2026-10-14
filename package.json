@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/smoke.test.mjs"
+    "test": "node tests/smoke.test.mjs && node --test tests/reader-core.test.mjs tests/markdown.test.mjs && node tests/capture.test.mjs",
+    "test:ui": "node tests/reader-ui.test.mjs"
   }
 }

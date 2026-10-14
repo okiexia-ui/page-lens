@@ -1,72 +1,53 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Page Lens</title>
-    <link rel="stylesheet" href="sidepanel.css">
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div class="brand-wrap">
-          <div class="mark" aria-hidden="true">P</div>
-          <div>
-            <h1>Page Lens</h1>
-            <div class="connection"><span id="statusDot" class="status-dot"></span><span id="statusText">连接中</span></div>
-          </div>
-        </div>
-        <button id="settingsButton" class="icon-button" type="button" title="设置" aria-label="打开设置">⚙</button>
-      </header>
-
-      <section class="model-bar" aria-label="模型设置">
-        <div id="providerTabs" class="provider-tabs">
-          <button type="button" data-provider="all" class="provider-tab active">全部</button>
-          <button type="button" data-provider="gpt" class="provider-tab">GPT</button>
-          <button type="button" data-provider="kimi" class="provider-tab">Kimi</button>
-          <button type="button" data-provider="custom" class="provider-tab">自定义 API</button>
-        </div>
-        <div class="model-row">
-          <select id="modelSelect" aria-label="选择模型"><option>正在加载模型…</option></select>
-          <button id="refreshModelsButton" class="icon-button small" type="button" title="刷新模型" aria-label="刷新模型">↻</button>
-        </div>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Page Lens Reader</title><link rel="stylesheet" href="sidepanel.css"></head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand-wrap"><div class="mark" aria-hidden="true">p.</div><div><h1>Page Lens <span>Reader</span></h1><div class="connection"><span id="statusDot" class="status-dot"></span><span id="statusText">连接中</span></div></div></div>
+    <div class="header-actions"><button id="expandButton" class="icon-button" type="button" title="在新标签页展开阅读" aria-label="展开阅读">↗</button><button id="settingsButton" class="icon-button" type="button" title="设置" aria-label="打开设置">⚙</button></div>
+  </header>
+  <div class="utility-bar">
+    <nav class="view-tabs" aria-label="阅读模式"><button id="readerTab" class="view-tab active" type="button" aria-pressed="true">引导阅读</button><button id="chatTab" class="view-tab" type="button" aria-pressed="false">自由提问</button></nav>
+    <details class="model-settings"><summary>阅读模型 <span aria-hidden="true">⌄</span></summary><section class="model-bar" aria-label="模型设置">
+      <div id="providerTabs" class="provider-tabs"><button type="button" data-provider="all" class="provider-tab active">全部</button><button type="button" data-provider="gpt" class="provider-tab">GPT</button><button type="button" data-provider="kimi" class="provider-tab">Kimi</button><button type="button" data-provider="custom" class="provider-tab">自定义</button></div>
+      <div class="model-row"><select id="modelSelect" aria-label="选择模型"><option value="">正在加载模型…</option></select><button id="refreshModelsButton" class="icon-button small" type="button" aria-label="刷新模型">↻</button></div>
+    </section></details>
+  </div>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <main id="readerView" class="reader-workspace">
+    <section class="reading-pane" aria-label="文章正文">
+      <div class="reading-toolbar"><span class="eyebrow">THE READING ROOM</span><div class="text-tools"><button id="fontButton" type="button" aria-label="切换正文字号">Aa</button><button id="refreshPageButton" type="button">重新读取 ↻</button></div></div>
+      <div id="articleScroll" class="article-scroll" tabindex="0" aria-label="可滚动的文章正文">
+        <header class="article-header"><div id="pageUrl" class="page-url"></div><h2 id="pageTitle" class="page-title">正在读取当前网页…</h2><div id="pageMeta" class="page-meta"></div><div class="article-rule"></div></header>
+        <div id="articleBody" class="article-body"></div>
+        <div id="sectionGate" class="section-gate" hidden><span class="gate-icon" aria-hidden="true">✦</span><p>停一下，想一想。</p><span>把刚读到的观点，变成自己的理解。</span><button id="revealQuestionButton" class="text-button" type="button">读完了，看看问题 →</button></div>
+        <div id="lockedSection" class="locked-section" hidden><span aria-hidden="true">▤</span><span>完成这一题后，继续下一节</span></div>
+      </div>
+      <footer class="reading-footer"><span id="readingPosition">准备阅读</span><span>慢一点，读懂多一点。</span></footer>
+    </section>
+    <aside class="questions-pane" aria-label="阅读理解问题">
+      <div class="questions-heading"><span class="eyebrow">THINK AS YOU READ</span><span class="live-badge"><i></i> 随读随想</span></div>
+      <div class="questions-title-row"><h2>读懂重要的 idea.</h2><span id="questionCount" class="question-count"></span></div>
+      <p id="guideDescription" class="guide-description" role="status">不只是读完，也真正理解。</p>
+      <div id="progressSteps" class="progress-steps" aria-label="阅读进度"></div>
+      <section id="readerIntro" class="intro-card"><div class="intro-symbol" aria-hidden="true">✳</div><h3>给阅读留一点思考空间</h3><p>读到每节结尾，一道小问题会出现。试着抓住作者的主张、推理和证据。</p><div class="skill-tags"><span>核心观点</span><span>因果推理</span><span>原文依据</span></div><button id="startReadingButton" class="primary-button" type="button" disabled>开始引导阅读 <span>→</span></button><p id="generationStatus" class="small-note">使用当前模型，依据这篇文章生成问题。</p><button id="cancelGenerationButton" class="text-button cancel-button" type="button" hidden>取消生成</button></section>
+      <section id="waitingCard" class="waiting-card" hidden><div class="waiting-mark" aria-hidden="true">“</div><h3>先读，再想。</h3><p>读到本节末尾时，问题会在这里出现。</p><span id="waitingRange" class="range-label"></span></section>
+      <section id="questionCard" class="question-card" aria-labelledby="questionText" hidden>
+        <div class="question-meta"><span id="questionSkill" class="skill-label"></span><span id="questionNumber"></span></div><h3 id="questionText" tabindex="-1"></h3><p id="questionRange" class="question-range"></p>
+        <form id="answerForm"><fieldset id="answerOptions" class="answer-options"><legend class="sr-only">选择一个答案</legend></fieldset><button id="submitAnswerButton" class="primary-button" type="submit" disabled>确认答案 <span>→</span></button></form>
+        <div id="answerFeedback" class="answer-feedback" role="status" hidden><strong id="feedbackTitle"></strong><p id="feedbackExplanation"></p><div class="evidence-label">回到原文</div><blockquote id="feedbackEvidence"></blockquote><button id="evidenceButton" type="button" class="text-button">在正文中定位 ↗</button></div>
+        <button id="nextSectionButton" class="primary-button next-button" type="button" hidden>继续阅读 →</button>
       </section>
-
-      <section id="pageCard" class="page-card">
-        <div class="page-eyebrow">当前页面</div>
-        <div id="pageTitle" class="page-title">正在读取…</div>
-        <div id="pageUrl" class="page-url"></div>
-        <div class="page-actions">
-          <button id="refreshPageButton" class="ghost-button" type="button">重新读取</button>
-          <span id="pageMeta" class="page-meta"></span>
-        </div>
-      </section>
-
-      <main id="conversation" class="conversation" aria-live="polite">
-        <section id="emptyState" class="empty-state">
-          <div class="empty-orbit" aria-hidden="true"><span></span></div>
-          <h2>从这页开始</h2>
-          <p>用你的 GPT 或 Kimi 订阅额度，直接阅读当前网页。</p>
-          <div class="quick-actions">
-            <button type="button" data-prompt="请用 5 条要点总结本页，并给出一句话结论。">总结本页</button>
-            <button type="button" data-prompt="提取本页最重要的事实、数字、日期和结论；不要猜测。">提取重点</button>
-            <button type="button" data-prompt="解释这篇页面的核心逻辑，并指出读者最容易忽略的两点。">解释逻辑</button>
-          </div>
-        </section>
-        <div id="messages" class="messages"></div>
-      </main>
-
-      <footer class="composer-wrap">
-        <div id="notice" class="notice" hidden></div>
-        <div class="composer">
-          <textarea id="promptInput" rows="1" placeholder="针对当前页面提问…" aria-label="提问"></textarea>
-          <button id="sendButton" class="send-button" type="button" aria-label="发送">↑</button>
-        </div>
-        <div class="composer-foot"><span>Enter 发送 · Shift+Enter 换行</span><button id="clearButton" type="button">清空对话</button></div>
-      </footer>
-    </div>
-    <script src="config.js"></script>
-    <script src="config.local.js"></script>
-    <script src="sidepanel.js"></script>
-  </body>
+      <section id="completionCard" class="completion-card" hidden><div class="completion-symbol" aria-hidden="true">✓</div><span class="eyebrow">READ. THINK. UNDERSTAND.</span><h3>阅读完成，观点留下。</h3><p id="completionSummary"></p><div id="reviewList" class="review-list"></div><button id="restartButton" class="secondary-button" type="button">再读一遍 ↺</button><button id="regenerateButton" class="text-button regenerate-button" type="button">换一组问题 ↻</button></section>
+      <div class="reader-footnote"><span aria-hidden="true">✧</span> 好问题，让一个观点真正留下来。</div>
+    </aside>
+  </main>
+  <section id="chatView" class="chat-view" aria-label="自由提问" hidden>
+    <main id="conversation" class="conversation" aria-live="polite"><section id="emptyState" class="empty-state"><span class="eyebrow">A LITTLE MORE CURIOUS</span><h2>还有哪里想不通？</h2><p>针对这篇文章，继续和阅读助手聊聊。</p><div class="quick-actions"><button type="button" data-prompt="请解释这篇文章的核心观点和推理过程，并引用原文依据。">解释核心观点</button><button type="button" data-prompt="作者使用了什么论据？这些论据如何支撑结论？">梳理论据</button></div></section><div id="messages" class="messages"></div></main>
+    <footer class="composer-wrap"><div class="composer"><textarea id="promptInput" rows="1" placeholder="针对这篇文章提问…" aria-label="提问"></textarea><button id="sendButton" class="send-button" type="button" aria-label="发送">↑</button></div><div class="composer-foot"><span>Enter 发送 · Shift+Enter 换行</span><button id="clearButton" type="button">清空对话</button></div></footer>
+  </section>
+</div>
+<script src="config.js"></script><script src="config.local.js"></script><script src="reader-core.js"></script><script src="markdown.js"></script><script src="sidepanel.js"></script>
+</body>
 </html>
