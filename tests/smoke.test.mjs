@@ -17,7 +17,7 @@ for (const file of javascriptFiles) {
 }
 const manifest = JSON.parse(readFileSync("extension/manifest.json", "utf8"));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.2.0");
+assert.equal(manifest.version, "0.3.0");
 assert.ok(manifest.permissions.includes("sidePanel"));
 assert.ok(manifest.host_permissions.includes("http://*/*"));
 assert.ok(manifest.host_permissions.includes("https://*/*"));

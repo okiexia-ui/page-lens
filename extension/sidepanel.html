@@ -16,7 +16,7 @@
   </div>
   <div id="notice" class="notice" role="status" hidden></div>
   <main id="readerView" class="reader-workspace">
-    <section class="reading-pane" aria-label="文章正文">
+    <section id="readingPane" class="reading-pane" aria-label="文章正文">
       <div class="reading-toolbar"><span class="eyebrow">THE READING ROOM</span><div class="text-tools"><button id="fontButton" type="button" aria-label="切换正文字号">Aa</button><button id="refreshPageButton" type="button">重新读取 ↻</button></div></div>
       <div id="articleScroll" class="article-scroll" tabindex="0" aria-label="可滚动的文章正文">
         <header class="article-header"><div id="pageUrl" class="page-url"></div><h2 id="pageTitle" class="page-title">正在读取当前网页…</h2><div id="pageMeta" class="page-meta"></div><div class="article-rule"></div></header>
@@ -24,6 +24,7 @@
         <div id="sectionGate" class="section-gate" hidden><span class="gate-icon" aria-hidden="true">✦</span><p>停一下，想一想。</p><span>把刚读到的观点，变成自己的理解。</span><button id="revealQuestionButton" class="text-button" type="button">读完了，看看问题 →</button></div>
         <div id="lockedSection" class="locked-section" hidden><span aria-hidden="true">▤</span><span>完成这一题后，继续下一节</span></div>
       </div>
+      <button id="explainSelectionButton" class="selection-button" type="button" hidden>✦ 解释选中</button>
       <footer class="reading-footer"><span id="readingPosition">准备阅读</span><span>慢一点，读懂多一点。</span></footer>
     </section>
     <aside class="questions-pane" aria-label="阅读理解问题">
@@ -39,7 +40,7 @@
         <div id="answerFeedback" class="answer-feedback" role="status" hidden><strong id="feedbackTitle"></strong><p id="feedbackExplanation"></p><div class="evidence-label">回到原文</div><blockquote id="feedbackEvidence"></blockquote><button id="evidenceButton" type="button" class="text-button">在正文中定位 ↗</button></div>
         <button id="nextSectionButton" class="primary-button next-button" type="button" hidden>继续阅读 →</button>
       </section>
-      <section id="completionCard" class="completion-card" hidden><div class="completion-symbol" aria-hidden="true">✓</div><span class="eyebrow">READ. THINK. UNDERSTAND.</span><h3>阅读完成，观点留下。</h3><p id="completionSummary"></p><div id="reviewList" class="review-list"></div><button id="restartButton" class="secondary-button" type="button">再读一遍 ↺</button><button id="regenerateButton" class="text-button regenerate-button" type="button">换一组问题 ↻</button></section>
+      <section id="completionCard" class="completion-card" hidden><div class="completion-symbol" aria-hidden="true">✓</div><span class="eyebrow">READ. THINK. UNDERSTAND.</span><h3>阅读完成，观点留下。</h3><p id="completionSummary"></p><div id="reviewList" class="review-list"></div><button id="exportNotesButton" class="primary-button" type="button">导出阅读笔记 <span>⤓</span></button><button id="restartButton" class="secondary-button" type="button">再读一遍 ↺</button><button id="regenerateButton" class="text-button regenerate-button" type="button">换一组问题 ↻</button></section>
       <div class="reader-footnote"><span aria-hidden="true">✧</span> 好问题，让一个观点真正留下来。</div>
     </aside>
   </main>

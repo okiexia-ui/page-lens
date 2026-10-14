@@ -165,6 +165,23 @@
     return ranges;
   }
 
+  function buildNotes({ title, url, date, sections, questions, answers }) {
+    const letter = (index) => String.fromCharCode(65 + index);
+    const correct = answers.filter((answer) => answer?.correct).length;
+    const lines = [`# ${title || "阅读笔记"}`, "", `- 来源：${url || "未知"}`, `- 日期：${date}`, `- 结果：答对 ${correct} / ${questions.length}`, ""];
+    questions.forEach((question, index) => {
+      const { start, end } = sections[index];
+      const answer = answers[index];
+      lines.push(`## ${index + 1}. ${question.question}`, "", `*${question.skill} · 第 ${start + 1}${end > start ? `–${end + 1}` : ""} 段*`, "");
+      question.options.forEach((option, optionIndex) => {
+        const marks = [optionIndex === question.answerIndex ? "✓" : "", answer && !answer.correct && optionIndex === answer.selected ? "✗ 我的选择" : ""].filter(Boolean);
+        lines.push(`- ${letter(optionIndex)}. ${option}${marks.length ? ` ${marks.join(" ")}` : ""}`);
+      });
+      lines.push("", `**解析**：${question.explanation}`, "", ...question.evidence.split(/\n+/).map((line) => `> ${line.trim()}`), "");
+    });
+    return lines.join("\n");
+  }
+
   function fingerprintPage(page) {
     const input = JSON.stringify([page?.url || "", page?.text || ""]);
     // Two independently seeded 32-bit hashes keep this synchronous in extension UI code.
@@ -179,6 +196,6 @@
   }
 
   globalThis.ReaderCore = Object.freeze({
-    splitParagraphs, createSections, buildQuestionMessages, parseQuestions, shuffleOptions, findEvidenceRanges, fingerprintPage
+    splitParagraphs, createSections, buildQuestionMessages, parseQuestions, shuffleOptions, findEvidenceRanges, buildNotes, fingerprintPage
   });
 })();

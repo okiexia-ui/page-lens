@@ -32,7 +32,8 @@ function element(tagName, children = [], attributes = {}, style = {}) {
 }
 
 function environment(body, options = {}) {
-  const calls = { query: [], get: [], execute: [] };
+  const calls = { query: [], get: [], execute: [], open: [], session: [], menus: [] };
+  const listeners = {};
   const activeTab = options.activeTab || { id: 41, url: "https://example.com/article", favIconUrl: "https://example.com/icon.png" };
   const sourceTab = options.sourceTab || { id: 12, url: "https://example.com/source" };
   let listener;
@@ -60,10 +61,21 @@ function environment(body, options = {}) {
     getComputedStyle(node) {
       return { display: "block", visibility: "visible", ...node.style };
     },
+    getSelection: () => options.selection ?? "",
     chrome: {
-      sidePanel: { async setPanelBehavior() {} },
+      sidePanel: {
+        async setPanelBehavior() {},
+        open(details) { calls.open.push(details); return Promise.resolve(); }
+      },
+      contextMenus: {
+        removeAll(callback) { callback(); },
+        create(details) { calls.menus.push(details); },
+        onClicked: { addListener(callback) { listeners.menu = callback; } }
+      },
+      commands: { onCommand: { addListener(callback) { listeners.command = callback; } } },
+      storage: { session: { async set(values) { calls.session.push(values); } } },
       runtime: {
-        onInstalled: { addListener() {} },
+        onInstalled: { addListener(callback) { listeners.installed = callback; } },
         onStartup: { addListener() {} },
         onMessage: { addListener(callback) { listener = callback; } }
       },
@@ -80,7 +92,7 @@ function environment(body, options = {}) {
     }
   });
   vm.runInContext(background, context);
-  return { context, calls, listener };
+  return { context, calls, listener, listeners };
 }
 
 const first = "A reader remembers an idea more clearly when they pause to explain it in their own words.";
@@ -153,4 +165,32 @@ assert.equal(blocked.calls.execute.length, 0);
 const empty = environment(element("body", [element("nav", ["Menu"])]));
 await assert.rejects(empty.context.getPageContext(), /没有可读取的正文/);
 
-console.log("Reader page-capture checks passed.");
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const plain = (value) => JSON.parse(JSON.stringify(value)); // values created inside the vm realm
+const pageTab = { id: 7, windowId: 3, url: "https://example.com/article" };
+const selection = environment(body, { selection: "  A selected\n\n sentence.  " });
+selection.listeners.installed();
+assert.deepEqual(plain(selection.calls.menus.map((menu) => menu.contexts)), [["selection"]]);
+assert.ok(selection.calls.menus[0].documentUrlPatterns.every((pattern) => !pattern.startsWith("chrome")), "the menu stays off extension pages");
+
+selection.listeners.menu({ menuItemId: "page-lens-explain-selection", selectionText: `${"word ".repeat(600)}` }, pageTab);
+assert.deepEqual(plain(selection.calls.open), [{ windowId: 3 }], "the panel must open synchronously, inside the user gesture");
+await flush();
+const queued = selection.calls.session[0].pendingSelection;
+assert.equal(queued.text.length, 2000);
+assert.equal(queued.tabId, 7);
+assert.equal(queued.windowId, 3);
+
+selection.listeners.command("explain-selection", pageTab);
+assert.equal(selection.calls.open.length, 2);
+await flush();
+assert.equal(selection.calls.execute.at(-1).target.tabId, 7);
+assert.equal(selection.calls.session[1].pendingSelection.text, "A selected sentence.");
+
+selection.listeners.command("open-reader", pageTab);
+selection.listeners.menu({ menuItemId: "other", selectionText: "x" }, pageTab);
+await flush();
+assert.equal(selection.calls.open.length, 3);
+assert.equal(selection.calls.session.length, 2, "opening the reader or another menu item must not queue text");
+
+console.log("Reader page-capture and selection checks passed.");

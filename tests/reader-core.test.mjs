@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import "../extension/reader-core.js";
 
-const { splitParagraphs, createSections, buildQuestionMessages, parseQuestions, shuffleOptions, findEvidenceRanges, fingerprintPage } = globalThis.ReaderCore;
+const { splitParagraphs, createSections, buildQuestionMessages, parseQuestions, shuffleOptions, findEvidenceRanges, buildNotes, fingerprintPage } = globalThis.ReaderCore;
 const withoutWhitespace = (text) => text.replace(/\s+/gu, "");
 
 test("reader retains the complete article through paragraph splitting and sectioning", () => {
@@ -126,6 +126,22 @@ test("parser rejects incomplete, ambiguous, unsupported, and ungrounded quiz dat
     assert.throws(() => parseQuestions(raw, sections));
   }
   assert.throws(() => parseQuestions(encode([]), []));
+});
+
+test("reading notes record each question, the reader's choice, and the source quote", () => {
+  const questions = parseQuestions(encode(validQuestions()), sections);
+  const notes = buildNotes({
+    title: "Plant reading", url: "https://example.com/article", date: "2026-10-14",
+    sections, questions, answers: [{ selected: 0, correct: true }, { selected: 3, correct: false }]
+  });
+  assert.match(notes, /^# Plant reading\n/);
+  assert.match(notes, /- 结果：答对 1 \/ 2/);
+  assert.match(notes, /## 1\. 第一节的核心观点是什么？\n\n\*主旨理解 · 第 1 段\*/);
+  assert.match(notes, /- A\. 植物利用光能生长 ✓\n/);
+  assert.match(notes, /- B\. 阴影减少可用光线 ✓\n/);
+  assert.match(notes, /- D\. 阴影增加生长速度 ✗ 我的选择\n/);
+  assert.match(notes, /> Plants turn light into energy\.\n> That process supports their growth\./, "multi-line quotes stay inside the blockquote");
+  assert.doesNotMatch(notes, /- A\. 植物利用光能生长 ✓ ✗/);
 });
 
 test("fingerprint detects same-length edits anywhere in the full source", () => {

@@ -261,6 +261,7 @@ h1 span {
 }
 
 .reading-pane {
+  position:relative;
   align-self:start;
   min-width:0;
   background:#fff;
@@ -614,6 +615,28 @@ h1 span {
   color:var(--accent);
   justify-content:center;
   border-color:#ccd8c8;
+}
+
+.completion-card .secondary-button {
+  margin-top:10px;
+}
+
+.selection-button {
+  position:absolute;
+  z-index:2;
+  border:0;
+  border-radius:5px;
+  padding:7px 11px;
+  background:var(--ink);
+  color:#fff;
+  font-size:11px;
+  white-space:nowrap;
+  box-shadow:0 6px 18px rgba(37,59,54,.18);
+  animation:appear .15s ease-out;
+}
+
+.selection-button:hover {
+  background:var(--accent-dark);
 }
 
 .cancel-button,.regenerate-button {

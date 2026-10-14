@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import "../extension/reader-core.js";
@@ -61,7 +61,7 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 let browser;
 
-async function openFixture(width, responses = []) {
+async function openFixture(width, responses = [], search = "?sourceTab=42") {
   const context = await browser.newContext({ viewport: { width, height: 980 }, reducedMotion: "reduce" });
   const page = await context.newPage();
   const errors = [];
@@ -112,6 +112,7 @@ async function openFixture(width, responses = []) {
           return { ok: true, context: structuredClone(source) };
         }
       },
+      windows: { getCurrent: async () => ({ id: 1 }) },
       tabs: {
         create: async (details) => { window.__fixtureOpenedTabs.push(details); return { id: 43, ...details }; },
         query: async () => [{ id: 42, url: source.url }]
@@ -142,7 +143,7 @@ async function openFixture(width, responses = []) {
     errors.push(`Unexpected outbound request: ${url}`);
     return route.abort();
   });
-  await page.goto(`${origin}/sidepanel.html?sourceTab=42`);
+  await page.goto(`${origin}/sidepanel.html${search}`);
   await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
   return { context, page, errors, requests };
 }
@@ -181,7 +182,7 @@ try {
       assert.equal(unlockedParagraphs, readingSections[index].end + 1, "unread sections must remain gated");
       if (width === 1280 && index === 0) {
         await page.locator("#articleScroll").evaluate((element) => element.scrollTo({ top: 0, behavior: "instant" }));
-        await page.screenshot({ path: "/private/tmp/page-lens-reader-question.png", fullPage: true });
+        await page.screenshot({ path: join(tmpdir(), "page-lens-reader-question.png"), fullPage: true });
       }
       const shown = await page.locator(".answer-option").allTextContents();
       assert.deepEqual(shown.map((text) => text.slice(1)).sort(), [...questions[index].options].sort(), "shuffling must keep every option");
@@ -215,7 +216,7 @@ try {
         return evidence.top >= article.top - 1 && evidence.top < article.bottom - 20;
       });
       await assertNoOverflow(page, `${width}px answered question`);
-      if (index === 0) await page.screenshot({ path: `/private/tmp/page-lens-reader-${width === 1280 ? "wide" : "narrow"}.png`, fullPage: true });
+      if (index === 0) await page.screenshot({ path: join(tmpdir(), `page-lens-reader-${width === 1280 ? "wide" : "narrow"}.png`), fullPage: true });
       if (width === 1280 && index === 0) {
         const generated = requests.length;
         await page.reload();
@@ -232,6 +233,12 @@ try {
     await page.locator("#completionCard").waitFor({ state: "visible" });
     assert.equal(await page.locator("#reviewList .review-item").count(), readingSections.length);
     assert.match(await page.locator("#completionSummary").textContent(), /2/);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#exportNotesButton").click()]);
+    assert.equal(download.suggestedFilename(), "Why a city needs room for rain · 阅读笔记.md");
+    const notes = await readFile(await download.path(), "utf8");
+    assert.match(notes, /^# Why a city needs room for rain/);
+    assert.match(notes, /答对 2 \/ 3/);
+    for (const question of questions) assert.ok(notes.includes(`> ${question.evidence}`), "notes quote every source passage");
     await page.locator("#restartButton").click();
     await page.locator("#completionCard").waitFor({ state: "hidden" });
     await revealByReading(page);
@@ -272,6 +279,52 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
     console.log(`Reader UI flow, evidence, chat, and responsive checks passed at ${width}px.`);
+  }
+
+  {
+    // A selection queued from a web page is explained once the side panel has read that page.
+    const { context, page, errors, requests } = await openFixture(380, [], "");
+    await page.evaluate(() => sessionStorage.setItem("fixtureSession", JSON.stringify({
+      pendingSelection: { text: "Planning for the whole watershed", tabId: 42, windowId: 1, createdAt: Date.now() }
+    })));
+    await page.reload();
+    await page.locator("#chatView").waitFor({ state: "visible" });
+    await page.waitForFunction(() => document.querySelector("#messages .assistant .bubble li"));
+    assert.match(await page.locator("#messages .user .bubble").textContent(), /^解释：「Planning for the whole watershed」$/);
+    assert.match(requests.at(-1).messages.at(-1).content, /选中内容：\n「Planning for the whole watershed」/);
+    assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem("fixtureSession")).pendingSelection), undefined, "a selection is answered once");
+    await page.reload();
+    await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
+    assert.equal(await page.locator("#chatView").isVisible(), false);
+
+    // Selecting text inside the reader offers the same explanation.
+    await page.locator("#paragraph-1").evaluate((paragraph) => {
+      const range = document.createRange();
+      range.setStart(paragraph.firstChild, 0);
+      range.setEnd(paragraph.firstChild, 34);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.equal(await page.locator("#explainSelectionButton").isVisible(), false, "no button for a selection scrolled out of view");
+    await page.locator("#articleScroll").evaluate((element) => {
+      element.scrollTop = document.querySelector("#paragraph-1").offsetTop - element.offsetTop - 80;
+    });
+    await page.locator("#explainSelectionButton").waitFor({ state: "visible" });
+    const placement = await page.evaluate(() => {
+      const button = document.querySelector("#explainSelectionButton").getBoundingClientRect();
+      const selected = getSelection().getRangeAt(0).getBoundingClientRect();
+      return { gap: selected.top - button.bottom, inside: button.left >= 0 && button.right <= innerWidth };
+    });
+    assert.ok(placement.inside && placement.gap > 0 && placement.gap < 20, `button sits just above the selection (${JSON.stringify(placement)})`);
+    await assertNoOverflow(page, "380px selection button");
+    await page.locator("#explainSelectionButton").click();
+    await page.locator("#chatView").waitFor({ state: "visible" });
+    await page.waitForFunction(() => document.querySelector("#messages .user .bubble")?.textContent.includes("For many years, engineers tried to"));
+    assert.equal(await page.locator("#explainSelectionButton").isVisible(), false);
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log("Reader UI selection explanations passed.");
   }
 
   {

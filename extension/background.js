@@ -7,12 +7,48 @@ const BLOCKED_PROTOCOLS = new Set([
   "view-source:"
 ]);
 
+const EXPLAIN_MENU_ID = "page-lens-explain-selection";
+const MAX_SELECTION_CHARS = 2000;
+
 async function enableActionOpen() {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 }
 chrome.runtime.onInstalled.addListener(() => {
   enableActionOpen().catch(() => {});
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: EXPLAIN_MENU_ID,
+      title: "用 Page Lens 解释「%s」",
+      contexts: ["selection"],
+      documentUrlPatterns: ["http://*/*", "https://*/*", "file:///*"]
+    });
+  });
 });
+
+// sidePanel.open() needs the user gesture, so it is called before any await in these handlers.
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== EXPLAIN_MENU_ID || !tab?.id) return;
+  chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  queueSelection(tab, info.selectionText).catch(() => {});
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (!tab?.id || !["open-reader", "explain-selection"].includes(command)) return;
+  chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  if (command !== "explain-selection") return;
+  chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => String(getSelection() || "") })
+    .then(([injection]) => queueSelection(tab, injection?.result))
+    .catch(() => {});
+});
+
+async function queueSelection(tab, text) {
+  const selection = String(text || "").replace(/\s+/g, " ").trim().slice(0, MAX_SELECTION_CHARS);
+  if (!selection) return;
+  // The side panel in this window picks this up once it has read the page.
+  await chrome.storage.session.set({
+    pendingSelection: { text: selection, tabId: tab.id, windowId: tab.windowId, createdAt: Date.now() }
+  });
+}
 
 chrome.runtime.onStartup.addListener(() => {
   enableActionOpen().catch(() => {});

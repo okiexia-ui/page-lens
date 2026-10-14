@@ -1,6 +1,7 @@
 const CUSTOM_PREFIX = "custom::";
 const SESSION_PREFIX = "reader:";
 const SESSION_LIMIT = 20;
+const SELECTION_MAX_AGE = 60000;
 const FALLBACK_DEFAULTS = {
   baseUrl: "http://127.0.0.1:8317/v1", apiKey: "", maxChars: 60000,
   customApiBaseUrl: "", customApiKey: "", customApiModel: ""
@@ -10,18 +11,18 @@ const state = {
   models: [], provider: "all", page: null, pageFingerprint: "", apiMessages: [], busy: false,
   operation: null, pageLoading: false, modelLoading: false, pageRequest: 0, modelRequest: 0,
   paragraphs: [], sections: [], questions: [], answers: [], currentSection: 0,
-  started: false, questionShown: false, completed: false, observer: null, noticeSource: ""
+  started: false, questionShown: false, completed: false, observer: null, noticeSource: "", initialized: false
 };
 const ids = [
   "statusDot", "statusText", "settingsButton", "expandButton", "providerTabs", "modelSelect",
   "refreshModelsButton", "pageTitle", "pageUrl", "pageMeta", "refreshPageButton", "notice",
-  "readerTab", "chatTab", "readerView", "chatView", "fontButton", "articleScroll", "articleBody",
+  "readerTab", "chatTab", "readerView", "chatView", "readingPane", "fontButton", "articleScroll", "articleBody", "explainSelectionButton",
   "sectionGate", "lockedSection", "revealQuestionButton", "readingPosition", "questionCount",
   "guideDescription", "progressSteps", "readerIntro", "startReadingButton", "cancelGenerationButton", "generationStatus",
   "waitingCard", "waitingRange", "questionCard", "questionSkill", "questionNumber", "questionText",
   "questionRange", "answerForm", "answerOptions", "submitAnswerButton", "answerFeedback",
   "feedbackTitle", "feedbackExplanation", "feedbackEvidence", "evidenceButton", "nextSectionButton",
-  "completionCard", "completionSummary", "reviewList", "restartButton", "regenerateButton", "conversation", "emptyState",
+  "completionCard", "completionSummary", "reviewList", "restartButton", "regenerateButton", "exportNotesButton", "conversation", "emptyState",
   "messages", "promptInput", "sendButton", "clearButton"
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -34,6 +35,8 @@ async function init() {
   const stored = await chrome.storage.local.get([...Object.keys(FALLBACK_DEFAULTS), "selectedModel"]);
   state.config = { ...state.config, ...Object.fromEntries(Object.entries(stored).filter(([, value]) => value !== undefined)) };
   await Promise.allSettled([refreshModels(), refreshPage()]);
+  state.initialized = true;
+  takePendingSelection();
 }
 
 function bindEvents() {
@@ -43,6 +46,16 @@ function bindEvents() {
   el.startReadingButton.addEventListener("click", startReading);
   el.cancelGenerationButton.addEventListener("click", stopOperation);
   el.regenerateButton.addEventListener("click", regenerateQuestions);
+  el.exportNotesButton.addEventListener("click", exportNotes);
+  // Keep the reader's text selection when the floating button is pressed.
+  el.explainSelectionButton.addEventListener("mousedown", (event) => event.preventDefault());
+  el.explainSelectionButton.addEventListener("click", () => {
+    const text = String(getSelection() || "");
+    getSelection().removeAllRanges();
+    explainText(text);
+  });
+  document.addEventListener("selectionchange", updateSelectionButton);
+  el.articleScroll.addEventListener("scroll", updateSelectionButton, { passive: true });
   el.revealQuestionButton.addEventListener("click", () => revealQuestion(true));
   el.answerForm.addEventListener("submit", submitAnswer);
   el.answerOptions.addEventListener("change", () => { el.submitAnswerButton.disabled = false; });
@@ -89,6 +102,7 @@ function bindEvents() {
     button.addEventListener("click", () => runChat(button.dataset.prompt, button.textContent.trim()));
   });
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "session" && changes.pendingSelection?.newValue && state.initialized) takePendingSelection();
     const relevant = Object.keys(changes).filter((key) => key in FALLBACK_DEFAULTS);
     if (areaName !== "local" || !relevant.length) return;
     for (const key of relevant) state.config[key] = changes[key].newValue ?? FALLBACK_DEFAULTS[key];
@@ -501,6 +515,66 @@ function answerShortcut(event) {
   input.checked = true;
   input.focus();
   el.submitAnswerButton.disabled = false;
+}
+
+function updateSelectionButton() {
+  const selection = getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const text = String(selection || "").trim();
+  const rect = text && range && el.articleBody.contains(range.commonAncestorContainer) ? range.getBoundingClientRect() : null;
+  const view = el.articleScroll.getBoundingClientRect();
+  if (el.readerView.hidden || !rect || rect.bottom < view.top + 10 || rect.top > view.bottom - 10) {
+    el.explainSelectionButton.hidden = true;
+    return;
+  }
+  const pane = el.readingPane.getBoundingClientRect();
+  el.explainSelectionButton.hidden = false;
+  const width = el.explainSelectionButton.offsetWidth;
+  const left = Math.min(Math.max(rect.left + rect.width / 2 - width / 2, view.left + 8), view.right - width - 8);
+  // Sit above the selection, or below it when the selection starts at the top edge of the article.
+  const top = rect.top - 42 < view.top ? rect.bottom + 8 : rect.top - 42;
+  el.explainSelectionButton.style.left = `${left - pane.left}px`;
+  el.explainSelectionButton.style.top = `${top - pane.top}px`;
+}
+
+function explainText(text) {
+  const excerpt = String(text || "").replace(/\s+/g, " ").trim().slice(0, 2000);
+  if (!excerpt) return;
+  setView("chat");
+  const prompt = `请结合这篇文章解释我选中的内容：先说明它的意思，再说明它在作者论证中的作用；如有难词、术语或习语，逐一简要解释。\n\n选中内容：\n「${excerpt}」`;
+  const display = `解释：「${excerpt.length > 80 ? `${excerpt.slice(0, 80)}…` : excerpt}」`;
+  if (state.busy || state.pageLoading || !state.page || !el.modelSelect.value) {
+    el.promptInput.value = prompt;
+    autoGrow();
+    showNotice("现在还不能发送，问题已放进输入框，准备好后按 Enter。");
+    return;
+  }
+  runChat(prompt, display);
+}
+
+async function takePendingSelection() {
+  // Only the side panel answers selections made on web pages; an expanded reader tab is tied to its source.
+  if (sourceParam !== null || !chrome.storage.session) return;
+  try {
+    const { pendingSelection: pending } = await chrome.storage.session.get("pendingSelection");
+    if (!pending?.text || Date.now() - pending.createdAt > SELECTION_MAX_AGE) return;
+    if (pending.windowId !== (await chrome.windows.getCurrent()).id) return;
+    await chrome.storage.session.remove("pendingSelection");
+    if (pending.tabId !== state.page?.tabId) await refreshPage();
+    explainText(pending.text);
+  } catch (error) { showNotice(friendlyError(error)); }
+}
+
+function exportNotes() {
+  if (!state.completed) return;
+  const markdown = ReaderCore.buildNotes({
+    title: state.page?.title, url: state.page?.url, date: new Date().toLocaleDateString("sv-SE"),
+    sections: state.sections, questions: state.questions, answers: state.answers
+  });
+  const name = String(state.page?.title || "Page Lens").replace(/[\\/:*?"<>|\s]+/g, " ").trim().slice(0, 60) || "Page Lens";
+  const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+  Object.assign(document.createElement("a"), { href: url, download: `${name} · 阅读笔记.md` }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function paragraphRange(section) { return `第 ${section.start + 1}${section.end === section.start ? "" : `–${section.end + 1}`} 段`; }
