@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Page Lens Reader — GPT + Kimi",
-  "version": "0.3.0",
-  "description": "Read web articles with guided questions about key ideas, source evidence, and GPT/Kimi or your own API.",
+  "name": "__MSG_extName__",
+  "version": "0.4.0",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "permissions": [
     "sidePanel",
     "contextMenus",
@@ -25,7 +26,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "Open Page Lens Reader",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
@@ -33,12 +34,16 @@
   },
   "commands": {
     "open-reader": {
-      "suggested_key": { "default": "Alt+Shift+L" },
-      "description": "打开 Page Lens 阅读侧栏"
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      },
+      "description": "__MSG_commandOpen__"
     },
     "explain-selection": {
-      "suggested_key": { "default": "Alt+Shift+E" },
-      "description": "解释网页上选中的文字"
+      "suggested_key": {
+        "default": "Alt+Shift+E"
+      },
+      "description": "__MSG_commandExplain__"
     }
   },
   "side_panel": {

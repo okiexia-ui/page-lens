@@ -4,51 +4,51 @@
 <body>
 <div class="app-shell">
   <header class="topbar">
-    <div class="brand-wrap"><div class="mark" aria-hidden="true">p.</div><div><h1>Page Lens <span>Reader</span></h1><div class="connection"><span id="statusDot" class="status-dot"></span><span id="statusText">连接中</span></div></div></div>
-    <div class="header-actions"><button id="expandButton" class="icon-button" type="button" title="在新标签页展开阅读" aria-label="展开阅读">↗</button><button id="settingsButton" class="icon-button" type="button" title="设置" aria-label="打开设置">⚙</button></div>
+    <div class="brand-wrap"><div class="mark" aria-hidden="true">p.</div><div><h1>Page Lens <span>Reader</span></h1><div class="connection"><span id="statusDot" class="status-dot"></span><span id="statusText">正在连接阅读模型</span></div></div></div>
+    <div class="header-actions"><button id="languageButton" class="icon-button language-button" type="button" aria-label="Switch to English" title="Switch to English">EN</button><button id="expandButton" class="icon-button" type="button" data-i18n-title="header.expand" data-i18n-aria-label="header.expand" title="在新标签页展开阅读" aria-label="在新标签页展开阅读">↗</button><button id="settingsButton" class="icon-button" type="button" data-i18n-title="header.settings" data-i18n-aria-label="header.settings" title="打开设置" aria-label="打开设置">⚙</button></div>
   </header>
   <div class="utility-bar">
-    <nav class="view-tabs" aria-label="阅读模式"><button id="readerTab" class="view-tab active" type="button" aria-pressed="true">引导阅读</button><button id="chatTab" class="view-tab" type="button" aria-pressed="false">自由提问</button></nav>
-    <details class="model-settings"><summary>阅读模型 <span aria-hidden="true">⌄</span></summary><section class="model-bar" aria-label="模型设置">
-      <div id="providerTabs" class="provider-tabs"><button type="button" data-provider="all" class="provider-tab active">全部</button><button type="button" data-provider="gpt" class="provider-tab">GPT</button><button type="button" data-provider="kimi" class="provider-tab">Kimi</button><button type="button" data-provider="custom" class="provider-tab">自定义</button></div>
-      <div class="model-row"><select id="modelSelect" aria-label="选择模型"><option value="">正在加载模型…</option></select><button id="refreshModelsButton" class="icon-button small" type="button" aria-label="刷新模型">↻</button></div>
+    <nav class="view-tabs" data-i18n-aria-label="nav.label" aria-label="阅读模式"><button id="readerTab" class="view-tab active" type="button" aria-pressed="true" data-i18n="nav.reader">引导阅读</button><button id="chatTab" class="view-tab" type="button" aria-pressed="false" data-i18n="nav.chat">自由提问</button></nav>
+    <details class="model-settings"><summary><span data-i18n="model.settings">阅读模型</span> <span aria-hidden="true">⌄</span></summary><section class="model-bar" data-i18n-aria-label="model.settingsLabel" aria-label="模型设置">
+      <div id="providerTabs" class="provider-tabs"><button type="button" data-provider="all" class="provider-tab active" data-i18n="model.all">全部</button><button type="button" data-provider="gpt" class="provider-tab">GPT</button><button type="button" data-provider="kimi" class="provider-tab">Kimi</button><button type="button" data-provider="custom" class="provider-tab" data-i18n="model.customTab">自定义</button></div>
+      <div class="model-row"><select id="modelSelect" data-i18n-aria-label="model.choose" aria-label="选择模型"><option value="">正在加载模型…</option></select><button id="refreshModelsButton" class="icon-button small" type="button" data-i18n-aria-label="model.refresh" aria-label="刷新模型">↻</button></div>
     </section></details>
   </div>
   <div id="notice" class="notice" role="status" hidden></div>
   <main id="readerView" class="reader-workspace">
-    <section id="readingPane" class="reading-pane" aria-label="文章正文">
-      <div class="reading-toolbar"><span class="eyebrow">THE READING ROOM</span><div class="text-tools"><button id="fontButton" type="button" aria-label="切换正文字号">Aa</button><button id="refreshPageButton" type="button">重新读取 ↻</button></div></div>
-      <div id="articleScroll" class="article-scroll" tabindex="0" aria-label="可滚动的文章正文">
+    <section id="readingPane" class="reading-pane" data-i18n-aria-label="page.paneLabel" aria-label="文章正文">
+      <div class="reading-toolbar"><span class="eyebrow">THE READING ROOM</span><div class="text-tools"><button id="fontButton" type="button" data-i18n-aria-label="page.fontToggle" aria-label="切换正文字号">Aa</button><button id="refreshPageButton" type="button" data-i18n="page.reload">重新读取 ↻</button></div></div>
+      <div id="articleScroll" class="article-scroll" tabindex="0" data-i18n-aria-label="page.scrollLabel" aria-label="可滚动的文章正文">
         <header class="article-header"><div id="pageUrl" class="page-url"></div><h2 id="pageTitle" class="page-title">正在读取当前网页…</h2><div id="pageMeta" class="page-meta"></div><div class="article-rule"></div></header>
         <div id="articleBody" class="article-body"></div>
-        <div id="sectionGate" class="section-gate" hidden><span class="gate-icon" aria-hidden="true">✦</span><p>停一下，想一想。</p><span>把刚读到的观点，变成自己的理解。</span><button id="revealQuestionButton" class="text-button" type="button">读完了，看看问题 →</button></div>
-        <div id="lockedSection" class="locked-section" hidden><span aria-hidden="true">▤</span><span>完成这一题后，继续下一节</span></div>
+        <div id="sectionGate" class="section-gate" hidden><span class="gate-icon" aria-hidden="true">✦</span><p data-i18n="gate.pause">停一下，想一想。</p><span data-i18n="gate.hint">把刚读到的观点，变成自己的理解。</span><button id="revealQuestionButton" class="text-button" type="button">读完了，看看问题 →</button></div>
+        <div id="lockedSection" class="locked-section" hidden><span aria-hidden="true">▤</span><span data-i18n="gate.locked">完成这一题后，继续下一节</span></div>
       </div>
-      <button id="explainSelectionButton" class="selection-button" type="button" hidden>✦ 解释选中</button>
-      <footer class="reading-footer"><span id="readingPosition">准备阅读</span><span>慢一点，读懂多一点。</span></footer>
+      <button id="explainSelectionButton" class="selection-button" type="button" data-i18n="selection.explain" hidden>✦ 解释选中</button>
+      <footer class="reading-footer"><span id="readingPosition">准备阅读</span><span data-i18n="page.footer">慢一点，读懂多一点。</span></footer>
     </section>
-    <aside class="questions-pane" aria-label="阅读理解问题">
-      <div class="questions-heading"><span class="eyebrow">THINK AS YOU READ</span><span class="live-badge"><i></i> 随读随想</span></div>
-      <div class="questions-title-row"><h2>读懂重要的 idea.</h2><span id="questionCount" class="question-count"></span></div>
+    <aside class="questions-pane" data-i18n-aria-label="pane.label" aria-label="阅读理解问题">
+      <div class="questions-heading"><span class="eyebrow">THINK AS YOU READ</span><span class="live-badge"><i></i> <span data-i18n="pane.badge">随读随想</span></span></div>
+      <div class="questions-title-row"><h2 data-i18n="pane.title">读懂重要的 idea.</h2><span id="questionCount" class="question-count"></span></div>
       <p id="guideDescription" class="guide-description" role="status">不只是读完，也真正理解。</p>
       <div id="progressSteps" class="progress-steps" aria-label="阅读进度"></div>
-      <section id="readerIntro" class="intro-card"><div class="intro-symbol" aria-hidden="true">✳</div><h3>给阅读留一点思考空间</h3><p>读到每节结尾，一道小问题会出现。试着抓住作者的主张、推理和证据。</p><div class="skill-tags"><span>核心观点</span><span>因果推理</span><span>原文依据</span></div><button id="startReadingButton" class="primary-button" type="button" disabled>开始引导阅读 <span>→</span></button><p id="generationStatus" class="small-note">使用当前模型，依据这篇文章生成问题。</p><button id="cancelGenerationButton" class="text-button cancel-button" type="button" hidden>取消生成</button></section>
-      <section id="waitingCard" class="waiting-card" hidden><div class="waiting-mark" aria-hidden="true">“</div><h3>先读，再想。</h3><p>读到本节末尾时，问题会在这里出现。</p><span id="waitingRange" class="range-label"></span></section>
+      <section id="readerIntro" class="intro-card"><div class="intro-symbol" aria-hidden="true">✳</div><h3 data-i18n="intro.title">给阅读留一点思考空间</h3><p data-i18n="intro.body">读到每节结尾，一道小问题会出现。试着抓住作者的主张、推理和证据。</p><div class="skill-tags"><span data-i18n="intro.tagIdea">核心观点</span><span data-i18n="intro.tagReasoning">因果推理</span><span data-i18n="intro.tagEvidence">原文依据</span></div><button id="startReadingButton" class="primary-button" type="button" disabled>开始引导阅读 →</button><p id="generationStatus" class="small-note">使用当前模型，依据这篇文章生成问题。</p><button id="cancelGenerationButton" class="text-button cancel-button" type="button" data-i18n="intro.cancel" hidden>取消生成</button></section>
+      <section id="waitingCard" class="waiting-card" hidden><div class="waiting-mark" aria-hidden="true">“</div><h3 data-i18n="waiting.title">先读，再想。</h3><p data-i18n="waiting.body">读到本节末尾时，问题会在这里出现。</p><span id="waitingRange" class="range-label"></span></section>
       <section id="questionCard" class="question-card" aria-labelledby="questionText" hidden>
         <div class="question-meta"><span id="questionSkill" class="skill-label"></span><span id="questionNumber"></span></div><h3 id="questionText" tabindex="-1"></h3><p id="questionRange" class="question-range"></p>
-        <form id="answerForm"><fieldset id="answerOptions" class="answer-options"><legend class="sr-only">选择一个答案</legend></fieldset><button id="submitAnswerButton" class="primary-button" type="submit" disabled>确认答案 <span>→</span></button></form>
-        <div id="answerFeedback" class="answer-feedback" role="status" hidden><strong id="feedbackTitle"></strong><p id="feedbackExplanation"></p><div class="evidence-label">回到原文</div><blockquote id="feedbackEvidence"></blockquote><button id="evidenceButton" type="button" class="text-button">在正文中定位 ↗</button></div>
+        <form id="answerForm"><fieldset id="answerOptions" class="answer-options"><legend class="sr-only">选择一个答案</legend></fieldset><button id="submitAnswerButton" class="primary-button" type="submit" disabled><span data-i18n="question.submit">确认答案</span> <span>→</span></button></form>
+        <div id="answerFeedback" class="answer-feedback" role="status" hidden><strong id="feedbackTitle"></strong><p id="feedbackExplanation"></p><div class="evidence-label" data-i18n="feedback.evidence">回到原文</div><blockquote id="feedbackEvidence"></blockquote><button id="evidenceButton" type="button" class="text-button" data-i18n="feedback.locate">在正文中定位 ↗</button></div>
         <button id="nextSectionButton" class="primary-button next-button" type="button" hidden>继续阅读 →</button>
       </section>
-      <section id="completionCard" class="completion-card" hidden><div class="completion-symbol" aria-hidden="true">✓</div><span class="eyebrow">READ. THINK. UNDERSTAND.</span><h3>阅读完成，观点留下。</h3><p id="completionSummary"></p><div id="reviewList" class="review-list"></div><button id="exportNotesButton" class="primary-button" type="button">导出阅读笔记 <span>⤓</span></button><button id="restartButton" class="secondary-button" type="button">再读一遍 ↺</button><button id="regenerateButton" class="text-button regenerate-button" type="button">换一组问题 ↻</button></section>
-      <div class="reader-footnote"><span aria-hidden="true">✧</span> 好问题，让一个观点真正留下来。</div>
+      <section id="completionCard" class="completion-card" hidden><div class="completion-symbol" aria-hidden="true">✓</div><span class="eyebrow">READ. THINK. UNDERSTAND.</span><h3 data-i18n="completion.title">阅读完成，观点留下。</h3><p id="completionSummary"></p><div id="reviewList" class="review-list"></div><button id="exportNotesButton" class="primary-button" type="button"><span data-i18n="completion.export">导出阅读笔记</span> <span>⤓</span></button><button id="restartButton" class="secondary-button" type="button" data-i18n="completion.restart">再读一遍 ↺</button><button id="regenerateButton" class="text-button regenerate-button" type="button" data-i18n="completion.regenerate">换一组问题 ↻</button></section>
+      <div class="reader-footnote"><span aria-hidden="true">✧</span> <span data-i18n="pane.footnote">好问题，让一个观点真正留下来。</span></div>
     </aside>
   </main>
-  <section id="chatView" class="chat-view" aria-label="自由提问" hidden>
-    <main id="conversation" class="conversation" aria-live="polite"><section id="emptyState" class="empty-state"><span class="eyebrow">A LITTLE MORE CURIOUS</span><h2>还有哪里想不通？</h2><p>针对这篇文章，继续和阅读助手聊聊。</p><div class="quick-actions"><button type="button" data-prompt="请解释这篇文章的核心观点和推理过程，并引用原文依据。">解释核心观点</button><button type="button" data-prompt="作者使用了什么论据？这些论据如何支撑结论？">梳理论据</button></div></section><div id="messages" class="messages"></div></main>
-    <footer class="composer-wrap"><div class="composer"><textarea id="promptInput" rows="1" placeholder="针对这篇文章提问…" aria-label="提问"></textarea><button id="sendButton" class="send-button" type="button" aria-label="发送">↑</button></div><div class="composer-foot"><span>Enter 发送 · Shift+Enter 换行</span><button id="clearButton" type="button">清空对话</button></div></footer>
+  <section id="chatView" class="chat-view" data-i18n-aria-label="chat.label" aria-label="自由提问" hidden>
+    <main id="conversation" class="conversation" aria-live="polite"><section id="emptyState" class="empty-state"><span class="eyebrow">A LITTLE MORE CURIOUS</span><h2 data-i18n="chat.emptyTitle">还有哪里想不通？</h2><p data-i18n="chat.emptyBody">针对这篇文章，继续和阅读助手聊聊。</p><div class="quick-actions"><button type="button" data-prompt-key="chat.quickIdeaPrompt" data-i18n="chat.quickIdea">解释核心观点</button><button type="button" data-prompt-key="chat.quickEvidencePrompt" data-i18n="chat.quickEvidence">梳理论据</button></div></section><div id="messages" class="messages"></div></main>
+    <footer class="composer-wrap"><div class="composer"><textarea id="promptInput" rows="1" data-i18n-placeholder="chat.placeholder" data-i18n-aria-label="chat.inputLabel" placeholder="针对这篇文章提问…" aria-label="提问"></textarea><button id="sendButton" class="send-button" type="button" aria-label="发送">↑</button></div><div class="composer-foot"><span data-i18n="chat.hint">Enter 发送 · Shift+Enter 换行</span><button id="clearButton" type="button" data-i18n="chat.clear">清空对话</button></div></footer>
   </section>
 </div>
-<script src="config.js"></script><script src="config.local.js"></script><script src="reader-core.js"></script><script src="markdown.js"></script><script src="sidepanel.js"></script>
+<script src="config.js"></script><script src="config.local.js"></script><script src="i18n.js"></script><script src="reader-core.js"></script><script src="markdown.js"></script><script src="sidepanel.js"></script>
 </body>
 </html>

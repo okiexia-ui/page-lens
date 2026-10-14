@@ -1,3 +1,5 @@
+importScripts("i18n.js");
+
 const BLOCKED_PROTOCOLS = new Set([
   "chrome:",
   "chrome-extension:",
@@ -15,15 +17,26 @@ async function enableActionOpen() {
 }
 chrome.runtime.onInstalled.addListener(() => {
   enableActionOpen().catch(() => {});
-  chrome.contextMenus.removeAll(() => {
+  chrome.contextMenus.removeAll(async () => {
     chrome.contextMenus.create({
       id: EXPLAIN_MENU_ID,
-      title: "用 Page Lens 解释「%s」",
+      title: await explainMenuTitle(),
       contexts: ["selection"],
       documentUrlPatterns: ["http://*/*", "https://*/*", "file:///*"]
     });
   });
 });
+
+// Keep the menu in the language chosen in the side panel or settings.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !("uiLanguage" in changes)) return;
+  explainMenuTitle().then((title) => chrome.contextMenus.update(EXPLAIN_MENU_ID, { title })).catch(() => {});
+});
+
+async function explainMenuTitle() {
+  const { uiLanguage } = await chrome.storage.local.get("uiLanguage");
+  return PageLensI18n.translator(PageLensI18n.resolveLanguage(uiLanguage, navigator.language))("menu.explain");
+}
 
 // sidePanel.open() needs the user gesture, so it is called before any await in these handlers.
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -61,24 +74,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   getPageContext(message.tabId)
     .then((context) => sendResponse({ ok: true, context }))
-    .catch((error) => sendResponse({ ok: false, error: error.message }));
+    .catch((error) => sendResponse({ ok: false, error: error.message, code: error.code }));
 
   return true;
 });
 
 async function getPageContext(tabId) {
   if (tabId !== undefined && (!Number.isInteger(tabId) || tabId <= 0)) {
-    throw new Error("原网页标签无效，请重新打开 Reader");
+    throw readerError("invalidTab", "The source tab is invalid");
   }
 
   const tab = tabId === undefined
     ? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
     : await chrome.tabs.get(tabId);
-  if (!tab?.id || !tab.url) throw new Error("没有找到当前标签页");
+  if (!tab?.id || !tab.url) throw readerError("noTab", "No current tab");
 
   const protocol = new URL(tab.url).protocol;
   if (BLOCKED_PROTOCOLS.has(protocol)) {
-    throw new Error("Chrome 系统页面不允许扩展读取，请切换到普通网页");
+    throw readerError("restricted", "Browser pages cannot be read");
   }
 
   const [{ result }] = await chrome.scripting.executeScript({
@@ -86,13 +99,18 @@ async function getPageContext(tabId) {
     func: extractReadablePage
   });
 
-  if (!result?.text) throw new Error("当前页面没有可读取的正文");
+  if (!result?.text) throw readerError("noText", "No readable text");
 
   return {
     ...result,
     tabId: tab.id,
     favicon: tab.favIconUrl || ""
   };
+}
+
+// The side panel shows these codes in the reader's own language.
+function readerError(code, message) {
+  return Object.assign(new Error(message), { code });
 }
 
 function extractReadablePage() {
@@ -184,7 +202,7 @@ function extractReadablePage() {
   const language = document.documentElement.lang || "";
 
   return {
-    title: document.title || "未命名页面",
+    title: document.title || "",
     url: canonical,
     lang: language,
     language,

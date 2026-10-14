@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import "../extension/i18n.js";
 import "../extension/reader-core.js";
 
 const { splitParagraphs, createSections, buildQuestionMessages, parseQuestions, shuffleOptions, findEvidenceRanges, buildNotes, fingerprintPage } = globalThis.ReaderCore;
+const { translator } = globalThis.PageLensI18n;
 const withoutWhitespace = (text) => text.replace(/\s+/gu, "");
 
 test("reader retains the complete article through paragraph splitting and sectioning", () => {
@@ -39,8 +41,8 @@ const sections = [
   { id: 2, start: 1, end: 1, text: "Shade reduces the light available to plants. Their growth can slow down." }
 ];
 const validQuestions = () => [
-  { sectionId: 1, skill: "主旨理解", question: " 第一节的核心观点是什么？ ", options: ["植物利用光能生长", "植物无需能量", "植物只在夜间生长", "光线阻止植物生长"], answerIndex: 0, explanation: "原文说明了光、能量与植物生长的关系。", evidence: "Plants turn light into energy.\nThat process supports their growth." },
-  { sectionId: 2, skill: "因果推理", question: "为什么阴影可能减缓植物生长？", options: ["阴影让植物失去水分", "阴影减少可用光线", "阴影提高温度", "阴影增加生长速度"], answerIndex: 1, explanation: "阴影减少了植物可以利用的光。", evidence: "Shade reduces the light available to plants." }
+  { sectionId: 1, skill: "main_idea", question: " 第一节的核心观点是什么？ ", options: ["植物利用光能生长", "植物无需能量", "植物只在夜间生长", "光线阻止植物生长"], answerIndex: 0, explanation: "原文说明了光、能量与植物生长的关系。", evidence: "Plants turn light into energy.\nThat process supports their growth." },
+  { sectionId: 2, skill: "reasoning", question: "为什么阴影可能减缓植物生长？", options: ["阴影让植物失去水分", "阴影减少可用光线", "阴影提高温度", "阴影增加生长速度"], answerIndex: 1, explanation: "阴影减少了植物可以利用的光。", evidence: "Shade reduces the light available to plants." }
 ];
 const encode = (questions) => JSON.stringify({ questions });
 
@@ -49,9 +51,18 @@ test("question prompt includes every section verbatim and treats article text as
   assert.deepEqual(messages.map((message) => message.role), ["system", "user"]);
   assert.match(messages[0].content, /不是指令/);
   assert.match(messages[0].content, /尚未阅读/);
+  assert.match(messages[0].content, /使用中文/);
   const source = JSON.parse(messages[1].content);
   assert.equal(source.sections[1].text, sections[1].text);
   assert.deepEqual(source.sections.map((section) => section.sectionId), [1, 2]);
+  const english = buildQuestionMessages({ title: "Plant reading", url: "https://example.com/article" }, sections, "en");
+  assert.match(english[0].content, /not instructions/);
+  assert.match(english[0].content, /in English/);
+  assert.match(english[0].content, /original language/, "quotes stay verbatim whatever the question language");
+  assert.equal(english[1].content, messages[1].content);
+  for (const skill of ["main_idea", "reasoning", "evidence"]) {
+    assert.ok(messages[0].content.includes(skill) && english[0].content.includes(skill));
+  }
 });
 
 test("parser handles fenced JSON, normalized evidence whitespace, and section ordering", () => {
@@ -103,6 +114,7 @@ test("parser rejects incomplete, ambiguous, unsupported, and ungrounded quiz dat
     (questions) => { questions[0].sectionId = "1"; },
     (questions) => { questions[0].sectionId = null; },
     (questions) => { questions[0].skill = "词语记忆"; },
+    (questions) => { questions[0].skill = "主旨理解"; },
     (questions) => { questions[0].question = " "; },
     (questions) => { questions[0].explanation = ""; },
     (questions) => { questions[0].options.pop(); },
@@ -120,7 +132,7 @@ test("parser rejects incomplete, ambiguous, unsupported, and ungrounded quiz dat
   for (const mutate of mutations) {
     const questions = validQuestions();
     mutate(questions);
-    assert.throws(() => parseQuestions(encode(questions), sections), /问题格式或原文依据/);
+    assert.throws(() => parseQuestions(encode(questions), sections), (error) => error.code === "invalidQuestions");
   }
   for (const raw of ["", "garbage", "null", "[]", "{}", "x}", '{"questions":[]}', encode(validQuestions()).slice(0, -2)]) {
     assert.throws(() => parseQuestions(raw, sections));
@@ -130,18 +142,26 @@ test("parser rejects incomplete, ambiguous, unsupported, and ungrounded quiz dat
 
 test("reading notes record each question, the reader's choice, and the source quote", () => {
   const questions = parseQuestions(encode(validQuestions()), sections);
-  const notes = buildNotes({
+  const session = {
     title: "Plant reading", url: "https://example.com/article", date: "2026-10-14",
     sections, questions, answers: [{ selected: 0, correct: true }, { selected: 3, correct: false }]
-  });
-  assert.match(notes, /^# Plant reading\n/);
+  };
+  const notes = buildNotes({ ...session, t: translator("zh") });
+  assert.match(notes, /^# Plant reading\n\n- 来源：https:\/\/example\.com\/article\n- 日期：2026-10-14\n/);
   assert.match(notes, /- 结果：答对 1 \/ 2/);
   assert.match(notes, /## 1\. 第一节的核心观点是什么？\n\n\*主旨理解 · 第 1 段\*/);
+  assert.match(notes, /\*\*解析\*\*：原文说明了/);
   assert.match(notes, /- A\. 植物利用光能生长 ✓\n/);
   assert.match(notes, /- B\. 阴影减少可用光线 ✓\n/);
   assert.match(notes, /- D\. 阴影增加生长速度 ✗ 我的选择\n/);
   assert.match(notes, /> Plants turn light into energy\.\n> That process supports their growth\./, "multi-line quotes stay inside the blockquote");
   assert.doesNotMatch(notes, /- A\. 植物利用光能生长 ✓ ✗/);
+
+  const english = buildNotes({ ...session, title: "", url: "", t: translator("en") });
+  assert.match(english, /^# Reading notes\n\n- Source: unknown\n- Date: 2026-10-14\n- Score: 1 \/ 2\n/);
+  assert.match(english, /\*Main idea · Paragraph 1\*/);
+  assert.match(english, /- D\. 阴影增加生长速度 ✗ my answer\n/);
+  assert.match(english, /\*\*Explanation\*\*: 阴影减少了/);
 });
 
 test("fingerprint detects same-length edits anywhere in the full source", () => {

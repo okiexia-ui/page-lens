@@ -1,0 +1,7 @@
+{
+  "extName": { "message": "Page Lens Reader — GPT + Kimi" },
+  "extDescription": { "message": "用关键观点理解题、原文依据和 GPT、Kimi 或自定义 API，引导你读懂网页文章。" },
+  "actionTitle": { "message": "打开 Page Lens 阅读器" },
+  "commandOpen": { "message": "打开 Page Lens 阅读侧栏" },
+  "commandExplain": { "message": "解释网页上选中的文字" }
+}

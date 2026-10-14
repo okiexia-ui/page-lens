@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import "../extension/i18n.js";
 import "../extension/reader-core.js";
 
 // This opt-in browser test uses an existing Playwright installation; no package dependency is added.
@@ -30,7 +31,7 @@ const readingSections = globalThis.ReaderCore.createSections(globalThis.ReaderCo
 assert.equal(readingSections.length, 3, "fixture must provide three reading checkpoints");
 const questions = readingSections.map((section, index) => ({
   sectionId: section.id,
-  skill: ["主旨理解", "因果推理", "论据分析"][index],
+  skill: ["main_idea", "reasoning", "evidence"][index],
   question: ["作者为什么认为城市内涝不仅仅是雨量的问题？", "雨水花园与透水路面共同发挥作用的关键是什么？", "作者为什么主张让当地居民参与雨水规划？"][index],
   options: [
     ["城市地表和排水方式也会影响雨水去向。", "城市中的降雨总比乡村更大。", "只要扩大排水管道，所有问题都会消失。", "混凝土能够吸收绝大部分雨水。"],
@@ -40,6 +41,17 @@ const questions = readingSections.map((section, index) => ({
   answerIndex: 0,
   explanation: ["作者把硬化地表与雨水快速汇集联系起来，强调城市的设计选择也会影响洪水风险。", "这些设施共同降低同一时刻进入排水管道的水量，从而分散排水压力。", "作者强调，居民熟悉每天经过的街道，能提供官方资料尚未记录的具体情况。 "][index],
   evidence: section.text.slice(0, section.text.indexOf(".") + 1)
+}));
+// The mock model answers in whichever language the question prompt asks for.
+const englishQuestions = questions.map((question, index) => ({
+  ...question,
+  question: ["Why does the author say urban flooding is not only about rainfall?", "What makes rain gardens and permeable paving work together?", "Why should local residents help plan for rain?"][index],
+  options: [
+    ["How a city covers its ground and drains water also shapes where rain goes.", "Cities always receive more rain than the countryside.", "Bigger pipes alone would solve every problem.", "Concrete absorbs most of the rain that falls on it."],
+    ["They let rain pause, slowing how fast it reaches the drains.", "They make every flood disappear for good.", "They never need any maintenance.", "Their only value is making streets look nicer."],
+    ["Residents' daily experience adds detail that maps and reports miss.", "Residents can replace all professional planners.", "Only the loudest neighborhoods need investment.", "Planning only needs to consider public space on dry days."]
+  ][index],
+  explanation: ["Hard surfaces speed up runoff, so the city's design choices shape flood risk.", "Together they reduce how much water reaches the pipes at the same moment.", "People who use the streets daily know problems before official reports do."][index]
 }));
 
 const server = createServer(async (request, response) => {
@@ -61,8 +73,8 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 let browser;
 
-async function openFixture(width, responses = [], search = "?sourceTab=42") {
-  const context = await browser.newContext({ viewport: { width, height: 980 }, reducedMotion: "reduce" });
+async function openFixture(width, responses = [], search = "?sourceTab=42", locale = "zh-CN") {
+  const context = await browser.newContext({ viewport: { width, height: 980 }, reducedMotion: "reduce", locale });
   const page = await context.newPage();
   const errors = [];
   const requests = [];
@@ -75,6 +87,7 @@ async function openFixture(width, responses = [], search = "?sourceTab=42") {
       selectedModel: "custom::fixture",
       maxChars: 60000
     };
+    window.__fixtureStored = stored;
     window.__fixtureMessages = [];
     window.__fixtureOpenedTabs = [];
     window.__fixtureDeferPage = false;
@@ -137,14 +150,15 @@ async function openFixture(width, responses = [], search = "?sourceTab=42") {
       const next = responses.shift();
       if (next === "hang") return new Promise(() => {});
       if (next === "unavailable") return route.fulfill({ status: 503, json: { error: { message: "Fixture model temporarily unavailable" } } });
-      const content = next === "malformed" ? '{"questions":[]}' : JSON.stringify({ questions });
+      const english = /in English/.test(payload.messages[0].content);
+      const content = next === "malformed" ? '{"questions":[]}' : JSON.stringify({ questions: english ? englishQuestions : questions });
       return route.fulfill({ json: { choices: [{ message: { content } }] } });
     }
     errors.push(`Unexpected outbound request: ${url}`);
     return route.abort();
   });
   await page.goto(`${origin}/sidepanel.html${search}`);
-  await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
+  if (search !== null) await page.waitForFunction(() => !document.querySelector("#startReadingButton").disabled);
   return { context, page, errors, requests };
 }
 
@@ -157,6 +171,16 @@ async function revealByReading(page) {
 }
 
 const option = (page, text) => page.locator(".answer-option", { hasText: text });
+const visibleText = (page) => page.evaluate(() => {
+  const toggle = document.querySelector("#languageButton");
+  toggle.hidden = true;
+  const text = document.body.innerText;
+  toggle.hidden = false;
+  return text;
+});
+const cjk = /[\u3400-\u9fff]/;
+// English interface strings long enough that article text will not contain them by chance.
+const englishInterface = Object.values(globalThis.PageLensI18n.MESSAGES.en).map((text) => text.split("{")[0].trim()).filter((text) => text.length >= 12 && !cjk.test(text));
 
 async function assertNoOverflow(page, label) {
   const dimensions = await page.evaluate(() => ({ viewport: innerWidth, width: document.documentElement.scrollWidth }));
@@ -265,8 +289,8 @@ try {
       await page.locator("#promptInput").fill("等待读取完成后再发送。");
       await page.locator("#promptInput").press("Enter");
       assert.equal(await page.locator("#sendButton").isDisabled(), true);
-      assert.equal(await page.locator("[data-prompt]").first().isDisabled(), true);
-      await page.locator("[data-prompt]").first().dispatchEvent("click");
+      assert.equal(await page.locator("[data-prompt-key]").first().isDisabled(), true);
+      await page.locator("[data-prompt-key]").first().dispatchEvent("click");
       await page.evaluate(() => new Promise(requestAnimationFrame));
       assert.equal(requests.length, beforeRecapture, "page recapture must block Enter and quick prompts from sending stale context");
       assert.equal(await page.locator("#promptInput").inputValue(), "等待读取完成后再发送。", "blocked send must preserve the draft");
@@ -358,6 +382,50 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
     console.log("Reader UI cancel passed for question generation and chat.");
+  }
+
+  {
+    // An English browser gets an English interface, English questions, and a live switch to Chinese.
+    const { context, page, errors, requests } = await openFixture(380, [], "?sourceTab=42", "en-US");
+    assert.equal(await page.evaluate(() => document.documentElement.lang), "en");
+    assert.equal(await page.locator("#startReadingButton").textContent(), "Start guided reading →");
+    assert.doesNotMatch(await visibleText(page), cjk, "no Chinese interface text in English mode");
+    await page.locator("#startReadingButton").click();
+    await page.locator("#waitingCard").waitFor({ state: "visible" });
+    assert.match(requests[0].messages[0].content, /Write the question, the four options, and the explanation in English/);
+    await revealByReading(page);
+    assert.equal(await page.locator("#questionSkill").textContent(), "Main idea");
+    assert.match(await page.locator("#questionRange").textContent(), /^Paragraphs 1–2 · Pick the option/);
+    await option(page, englishQuestions[0].options[1]).click();
+    await page.locator("#submitAnswerButton").click();
+    assert.match(await page.locator("#feedbackTitle").textContent(), /^Take another look · The answer is [A-D]$/);
+    assert.doesNotMatch(await visibleText(page), cjk, "answered question stays fully English");
+    await assertNoOverflow(page, "380px English answered question");
+
+    await page.locator("#languageButton").click();
+    assert.equal(await page.evaluate(() => document.documentElement.lang), "zh-CN");
+    assert.equal(await page.evaluate(() => window.__fixtureStored.uiLanguage), "zh", "the choice is saved");
+    assert.equal(await page.locator("#languageButton").textContent(), "EN");
+    assert.equal(await page.locator("#questionSkill").textContent(), "主旨理解", "saved questions re-label their skill");
+    assert.match(await page.locator("#feedbackTitle").textContent(), /^再看一眼这个观点 · 正确答案 [A-D]$/);
+    assert.match(await page.locator("#readingPosition").textContent(), /^第 1 \/ 3 节 · 第 1–2 段$/);
+    assert.equal(await page.locator("#nextSectionButton").textContent(), "继续阅读下一节 →");
+    assert.equal(await option(page, englishQuestions[0].options[1]).locator("input").isChecked(), true, "switching keeps the answer");
+    const chinese = await visibleText(page);
+    for (const text of englishInterface) assert.ok(!chinese.includes(text), `English left behind after switching: "${text}"`);
+    await page.locator("#languageButton").click();
+    assert.doesNotMatch(await visibleText(page), cjk, "switching back restores a fully English interface");
+
+    await page.goto(`${origin}/options.html`);
+    assert.equal(await page.locator("h1").textContent(), "Page Lens Settings");
+    assert.equal(await page.locator("#uiLanguage").inputValue(), "auto");
+    await page.locator("#uiLanguage").selectOption("zh");
+    assert.equal(await page.locator("h1").textContent(), "Page Lens 设置");
+    assert.equal(await page.locator("#saveButton").textContent(), "保存设置");
+    assert.equal(await page.evaluate(() => window.__fixtureStored.uiLanguage), "zh");
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log("Reader UI language checks passed in English and after switching to Chinese.");
   }
 
   for (const failure of ["malformed", "unavailable"]) {

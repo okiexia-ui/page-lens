@@ -4,14 +4,14 @@
 
 **Turn any web page into a reader that makes you think as you read.** Read an article section by section in Chrome's side panel, answer one comprehension question at the end of each section, check every answer against the original text, and export your reading notes when you finish. Works with GPT / Kimi subscriptions through a local CLIProxyAPI, or with any OpenAI-compatible API.
 
-> The interface and the generated questions are currently in Chinese. Articles stay in their original language.
+The interface is fully bilingual (English / Chinese): switch with the **中 / EN** button in the side panel. Questions and explanations follow the interface language; articles stay in their original language.
 
-![Wide reader view: the supporting quote is highlighted in the article on the left; the section's question and explanation are on the right](docs/reader.png)
+![Wide reader view: the supporting quote is highlighted in the article on the left; the section's question and explanation are on the right](docs/en/reader.png)
 
 <p align="center">
-  <img src="docs/sidepanel.png" width="320" alt="A comprehension question in the side panel">
+  <img src="docs/en/sidepanel.png" width="320" alt="A comprehension question in the side panel">
   &nbsp;&nbsp;
-  <img src="docs/chat.png" width="320" alt="Article chat in the side panel, with the reply formatted as Markdown">
+  <img src="docs/en/chat.png" width="320" alt="Article chat in the side panel, with the reply formatted as Markdown">
 </p>
 
 ## Why
@@ -29,12 +29,13 @@ It works especially well for long English articles, opinion pieces, and research
 | | |
 |---|---|
 | **Guided reading** | Splits the article into 1–5 sections with one multiple-choice question each (main idea, cause and effect, or evidence). A question appears only when you reach the end of a section, and the next section unlocks once you answer. |
-| **Quotes as proof** | Every explanation comes with a verbatim quote that is checked against the section when the questions are generated. **在正文中定位** (locate in text) marks that exact sentence in the article. |
-| **Explain a selection** | Select text on any page and right-click **用 Page Lens 解释** (explain with Page Lens), or press `Alt+Shift+E`. Inside the reader, selecting text shows an **解释选中** (explain selection) button. |
+| **Quotes as proof** | Every explanation comes with a verbatim quote that is checked against the section when the questions are generated. **Show in article** marks that exact sentence in the article. |
+| **Explain a selection** | Select text on any page and right-click **Explain “…” with Page Lens**, or press `Alt+Shift+E`. Inside the reader, selecting text shows an **Explain selection** button. |
 | **Reading notes** | When you finish, export Markdown notes with each question, your choice, the explanation, and the source quote, ready for Obsidian or Notion. |
 | **Article chat** | Ask follow-up questions about the whole article. Replies render Markdown and can be stopped at any time. |
 | **Saved progress** | Close and reopen the side panel and your questions and progress are still there, with no extra API calls. Cleared when Chrome quits. |
 | **No "always A"** | Options are shuffled so the answer's position gives nothing away. |
+| **English / 中文** | Switch the whole interface with **中 / EN**, or pick a language in Settings. By default it matches your browser. |
 
 ## Install
 
@@ -51,7 +52,7 @@ Open settings with the ⚙ button in the side panel and choose either option.
 
 ### Option 1: Custom API (simplest)
 
-Under **自定义 OpenAI 兼容 API** (custom OpenAI-compatible API), enter the Base URL, API key, and model name. Save, then choose **自定义 API** under **阅读模型** (reading model) in the side panel. Any service that implements `POST /chat/completions` works, for example:
+Under **Custom OpenAI-compatible API**, enter the Base URL, API key, and model name. Save, then choose **Custom API** under **Model** in the side panel. Any service that implements `POST /chat/completions` works, for example:
 
 | Service | Base URL |
 |---|---|
@@ -60,7 +61,7 @@ Under **自定义 OpenAI 兼容 API** (custom OpenAI-compatible API), enter the 
 | Moonshot (Kimi) | `https://api.moonshot.cn/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` |
 
-**测试并获取模型** (test and fetch models) lists the available models; for services without a `/models` endpoint, type the model name yourself. Both streaming and non-streaming responses are supported.
+**Test and fetch models** lists the available models; for services without a `/models` endpoint, type the model name yourself. Both streaming and non-streaming responses are supported.
 
 ### Option 2: GPT / Kimi subscriptions (advanced)
 
@@ -83,17 +84,17 @@ To start it at login, create a launchd service from [`proxy/com.local.pagelens.c
 launchctl kickstart -k gui/$(id -u)/com.local.pagelens.cliproxyapi
 ```
 
-Then enter the local client key under **GPT / Kimi 订阅代理** (subscription proxy) in settings. You can also copy `extension/config.local.example.js` to `extension/config.local.js` for local defaults; that file is excluded by `.gitignore`. Check each service's terms before using a subscription account this way.
+Then enter the local client key under **GPT / Kimi subscription proxy** in settings. You can also copy `extension/config.local.example.js` to `extension/config.local.js` for local defaults; that file is excluded by `.gitignore`. Check each service's terms before using a subscription account this way.
 
 ## Usage
 
 1. Open an article, then open the side panel. The text appears in the reader right away.
-2. Click **开始引导阅读** (start guided reading) to generate questions. If it is slow, click **取消生成** (cancel).
+2. Click **Start guided reading** to generate questions. If it is slow, click **Cancel**.
 3. Scroll to the end of a section and its question appears. Press **A–D** to choose and **Enter** to submit, or click.
-4. Read the explanation and quote, click **在正文中定位** to jump to the source, then continue to the next section.
-5. When you finish, **导出阅读笔记** (export notes), **再读一遍** (read again), or **换一组问题** (new questions).
+4. Read the explanation and quote, click **Show in article** to jump to the source, then continue to the next section.
+5. When you finish, **Export reading notes**, **Read again**, or get **New questions**.
 
-If the side panel feels narrow, **↗** opens a wide reader in a new tab (keep the original page open). **Aa** changes the text size, and **重新读取** (reload) captures the page again.
+If the side panel feels narrow, **↗** opens a wide reader in a new tab (keep the original page open). **Aa** changes the text size, **Reload** captures the page again, and **中 / EN** switches the language.
 
 ### Keyboard shortcuts
 
@@ -121,7 +122,7 @@ No dependencies to install:
 npm test
 ```
 
-Runs syntax, question parsing, Markdown rendering, page capture, and selection hand-off checks.
+Runs syntax, question parsing, Markdown rendering, page capture, selection hand-off, and translation checks (both languages must define the same keys and placeholders).
 
 ```bash
 npm run test:ui

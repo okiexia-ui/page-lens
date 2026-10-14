@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const background = readFileSync(new URL("../extension/background.js", import.meta.url), "utf8");
+const i18n = readFileSync(new URL("../extension/i18n.js", import.meta.url), "utf8");
 
 // A small DOM fixture keeps these tests dependency-free. It deliberately has no
 // innerText: reading a detached clone must not be needed to find paragraphs.
@@ -32,7 +33,8 @@ function element(tagName, children = [], attributes = {}, style = {}) {
 }
 
 function environment(body, options = {}) {
-  const calls = { query: [], get: [], execute: [], open: [], session: [], menus: [] };
+  const calls = { query: [], get: [], execute: [], open: [], session: [], menus: [], menuUpdates: [] };
+  const local = { ...(options.local || {}) };
   const listeners = {};
   const activeTab = options.activeTab || { id: 41, url: "https://example.com/article", favIconUrl: "https://example.com/icon.png" };
   const sourceTab = options.sourceTab || { id: 12, url: "https://example.com/source" };
@@ -62,6 +64,7 @@ function environment(body, options = {}) {
       return { display: "block", visibility: "visible", ...node.style };
     },
     getSelection: () => options.selection ?? "",
+    navigator: { language: options.browserLanguage || "zh-CN" },
     chrome: {
       sidePanel: {
         async setPanelBehavior() {},
@@ -70,10 +73,15 @@ function environment(body, options = {}) {
       contextMenus: {
         removeAll(callback) { callback(); },
         create(details) { calls.menus.push(details); },
+        update(id, details) { calls.menuUpdates.push({ id, ...details }); return Promise.resolve(); },
         onClicked: { addListener(callback) { listeners.menu = callback; } }
       },
       commands: { onCommand: { addListener(callback) { listeners.command = callback; } } },
-      storage: { session: { async set(values) { calls.session.push(values); } } },
+      storage: {
+        session: { async set(values) { calls.session.push(values); } },
+        local: { async get(key) { return key in local ? { [key]: local[key] } : {}; } },
+        onChanged: { addListener(callback) { listeners.storage = callback; } }
+      },
       runtime: {
         onInstalled: { addListener(callback) { listeners.installed = callback; } },
         onStartup: { addListener() {} },
@@ -91,8 +99,12 @@ function environment(body, options = {}) {
       }
     }
   });
+  context.importScripts = (file) => {
+    assert.equal(file, "i18n.js");
+    vm.runInContext(i18n, context);
+  };
   vm.runInContext(background, context);
-  return { context, calls, listener, listeners };
+  return { context, calls, listener, listeners, local };
 }
 
 const first = "A reader remembers an idea more clearly when they pause to explain it in their own words.";
@@ -155,22 +167,27 @@ assert.deepEqual(calls.get, [12]);
 assert.equal(calls.query.length, 1, "An explicit source tab must not query the active Reader tab");
 assert.equal(calls.execute[1].target.tabId, 12);
 for (const invalidId of [0, -1, 1.5, "12", null]) {
-  await assert.rejects(context.getPageContext(invalidId), /原网页标签无效/);
+  await assert.rejects(context.getPageContext(invalidId), (error) => error.code === "invalidTab");
 }
 assert.equal(listener({ type: "OTHER" }, {}, () => {}), false);
 
 const blocked = environment(body, { activeTab: { id: 3, url: "chrome://extensions" } });
-await assert.rejects(blocked.context.getPageContext(), /系统页面不允许/);
+await assert.rejects(blocked.context.getPageContext(), (error) => error.code === "restricted");
 assert.equal(blocked.calls.execute.length, 0);
 const empty = environment(element("body", [element("nav", ["Menu"])]));
-await assert.rejects(empty.context.getPageContext(), /没有可读取的正文/);
+await assert.rejects(empty.context.getPageContext(), (error) => error.code === "noText");
+const failure = await new Promise((resolve) => empty.listener({ type: "GET_PAGE_CONTEXT" }, {}, resolve));
+assert.equal(failure.ok, false);
+assert.equal(failure.code, "noText", "the side panel translates errors by code");
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const plain = (value) => JSON.parse(JSON.stringify(value)); // values created inside the vm realm
 const pageTab = { id: 7, windowId: 3, url: "https://example.com/article" };
 const selection = environment(body, { selection: "  A selected\n\n sentence.  " });
 selection.listeners.installed();
+await flush();
 assert.deepEqual(plain(selection.calls.menus.map((menu) => menu.contexts)), [["selection"]]);
+assert.equal(selection.calls.menus[0].title, "用 Page Lens 解释「%s」", "a Chinese browser gets the Chinese menu");
 assert.ok(selection.calls.menus[0].documentUrlPatterns.every((pattern) => !pattern.startsWith("chrome")), "the menu stays off extension pages");
 
 selection.listeners.menu({ menuItemId: "page-lens-explain-selection", selectionText: `${"word ".repeat(600)}` }, pageTab);
@@ -192,5 +209,22 @@ selection.listeners.menu({ menuItemId: "other", selectionText: "x" }, pageTab);
 await flush();
 assert.equal(selection.calls.open.length, 3);
 assert.equal(selection.calls.session.length, 2, "opening the reader or another menu item must not queue text");
+
+const english = environment(body, { browserLanguage: "en-US" });
+english.listeners.installed();
+await flush();
+assert.equal(english.calls.menus[0].title, "Explain “%s” with Page Lens");
+const chosen = environment(body, { browserLanguage: "en-US", local: { uiLanguage: "zh" } });
+chosen.listeners.installed();
+await flush();
+assert.equal(chosen.calls.menus[0].title, "用 Page Lens 解释「%s」", "a saved language overrides the browser");
+english.listeners.storage({ uiLanguage: { newValue: "zh" } }, "session");
+english.listeners.storage({ selectedModel: { newValue: "x" } }, "local");
+await flush();
+assert.equal(english.calls.menuUpdates.length, 0, "only a language change retitles the menu");
+english.local.uiLanguage = "zh";
+english.listeners.storage({ uiLanguage: { newValue: "zh" } }, "local");
+await flush();
+assert.deepEqual(plain(english.calls.menuUpdates), [{ id: "page-lens-explain-selection", title: "用 Page Lens 解释「%s」" }]);
 
 console.log("Reader page-capture and selection checks passed.");

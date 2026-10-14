@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 const javascriptFiles = [
   "extension/config.js",
   "extension/background.js",
+  "extension/i18n.js",
   "extension/reader-core.js",
   "extension/markdown.js",
   "extension/sidepanel.js",
@@ -17,7 +18,7 @@ for (const file of javascriptFiles) {
 }
 const manifest = JSON.parse(readFileSync("extension/manifest.json", "utf8"));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.3.0");
+assert.equal(manifest.version, "0.4.0");
 assert.ok(manifest.permissions.includes("sidePanel"));
 assert.ok(manifest.host_permissions.includes("http://*/*"));
 assert.ok(manifest.host_permissions.includes("https://*/*"));

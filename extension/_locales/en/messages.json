@@ -1,0 +1,7 @@
+{
+  "extName": { "message": "Page Lens Reader — GPT + Kimi" },
+  "extDescription": { "message": "Read web articles with guided questions about key ideas, verified source quotes, and GPT, Kimi, or your own API." },
+  "actionTitle": { "message": "Open Page Lens Reader" },
+  "commandOpen": { "message": "Open the Page Lens reader" },
+  "commandExplain": { "message": "Explain the text selected on the page" }
+}

@@ -1,6 +1,6 @@
 {
   "name": "page-lens-chrome-sidebar",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Guided reading for any web page in a Chrome side panel: checkpoint questions, verified source quotes, and article chat with GPT, Kimi, or any OpenAI-compatible API.",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/smoke.test.mjs && node --test tests/reader-core.test.mjs tests/markdown.test.mjs && node tests/capture.test.mjs",
+    "test": "node tests/smoke.test.mjs && node --test tests/reader-core.test.mjs tests/markdown.test.mjs tests/i18n.test.mjs && node tests/capture.test.mjs",
     "test:ui": "node tests/reader-ui.test.mjs",
     "package": "node scripts/package.mjs"
   }

@@ -18,18 +18,31 @@ const fields = {
   customModelList: document.querySelector("#customModelList"),
   maxChars: document.querySelector("#maxChars"),
   selectedModel: document.querySelector("#selectedModel"),
+  uiLanguage: document.querySelector("#uiLanguage"),
   result: document.querySelector("#result")
 };
+let t = PageLensI18n.translator(PageLensI18n.resolveLanguage("auto", navigator.language));
+applyLanguage();
 
 load().catch((error) => showResult(error.message, true));
 
 document.querySelectorAll("[data-secret-target]").forEach((button) => {
   button.addEventListener("click", () => {
     const input = fields[button.dataset.secretTarget];
-    const revealing = input.type === "password";
-    input.type = revealing ? "text" : "password";
-    button.textContent = revealing ? "隐藏" : "显示";
+    input.type = input.type === "password" ? "text" : "password";
+    renderSecretButtons();
   });
+});
+
+// The language applies immediately, independent of the Save button.
+fields.uiLanguage.addEventListener("change", () => {
+  chrome.storage.local.set({ uiLanguage: fields.uiLanguage.value }).catch(() => {});
+  setLanguage(fields.uiLanguage.value);
+});
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.uiLanguage) return;
+  fields.uiLanguage.value = changes.uiLanguage.newValue || "auto";
+  setLanguage(fields.uiLanguage.value);
 });
 
 document.querySelector("#testProxyButton").addEventListener("click", () => testConnection("proxy"));
@@ -37,8 +50,10 @@ document.querySelector("#testCustomButton").addEventListener("click", () => test
 document.querySelector("#saveButton").addEventListener("click", save);
 
 async function load() {
-  const keys = ["baseUrl", "apiKey", "maxChars", "selectedModel", "customApiBaseUrl", "customApiKey", "customApiModel"];
+  const keys = ["baseUrl", "apiKey", "maxChars", "selectedModel", "customApiBaseUrl", "customApiKey", "customApiModel", "uiLanguage"];
   const stored = await chrome.storage.local.get(keys);
+  fields.uiLanguage.value = PageLensI18n.LANGUAGES.includes(stored.uiLanguage) ? stored.uiLanguage : "auto";
+  setLanguage(fields.uiLanguage.value);
   for (const key of ["baseUrl", "apiKey", "maxChars", "customApiBaseUrl", "customApiKey", "customApiModel"]) {
     fields[key].value = stored[key] ?? defaults[key] ?? "";
   }
@@ -50,7 +65,7 @@ async function save() {
   if (!config) return;
   addCustomDefaultOption();
   await chrome.storage.local.set({ ...config, selectedModel: fields.selectedModel.value });
-  showResult("设置已保存。侧边栏会自动刷新模型配置。", false);
+  showResult(t("opt.saved"), false);
 }
 
 async function testConnection(kind) {
@@ -59,7 +74,7 @@ async function testConnection(kind) {
   const isCustom = kind === "custom";
   const targetBase = isCustom ? config.customApiBaseUrl : config.baseUrl;
   const targetKey = isCustom ? config.customApiKey : config.apiKey;
-  showResult(isCustom ? "正在连接自定义 API…" : "正在连接订阅代理…", false);
+  showResult(t(isCustom ? "opt.connectingCustom" : "opt.connectingProxy"), false);
 
   try {
     const response = await fetch(`${targetBase.replace(/\/$/, "")}/models`, {
@@ -69,7 +84,7 @@ async function testConnection(kind) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const models = (payload.data || []).map((item) => item.id).filter(Boolean).sort();
-    if (!models.length) throw new Error("接口在线，但没有返回模型");
+    if (!models.length) throw new Error(t("opt.noModels"));
 
     if (isCustom) {
       fields.customModelList.replaceChildren();
@@ -78,31 +93,30 @@ async function testConnection(kind) {
       addCustomDefaultOption();
     } else {
       const current = fields.selectedModel.value;
-      fields.selectedModel.replaceChildren(new Option("在侧边栏中选择", ""));
+      fields.selectedModel.replaceChildren(new Option(t("opt.chooseInPanel"), ""));
       for (const model of models) addModelOption(model, model, model === current);
       addCustomDefaultOption();
     }
-    showResult(`${isCustom ? "自定义 API" : "订阅代理"}连接成功，共发现 ${models.length} 个模型。`, false);
+    showResult(t(isCustom ? "opt.connectedCustom" : "opt.connectedProxy", { count: models.length }), false);
   } catch (error) {
-    const suffix = isCustom ? "；若服务不支持 /models，仍可手动填写准确模型名后保存" : "";
-    showResult(`连接失败：${error.message}${suffix}`, true);
+    showResult(t(isCustom ? "opt.failedCustom" : "opt.failed", { error: error.message }), true);
   }
 }
 
 function validatedConfig({ requireCustom = false } = {}) {
   try {
-    const proxyUrl = validHttpUrl(fields.baseUrl.value.trim(), "请输入有效的本机代理地址");
+    const proxyUrl = validHttpUrl(fields.baseUrl.value.trim(), t("opt.invalidProxyUrl"));
     const customUrlText = fields.customApiBaseUrl.value.trim();
     const customModel = fields.customApiModel.value.trim();
     const hasAnyCustomValue = Boolean(customUrlText || fields.customApiKey.value.trim() || customModel);
     if ((requireCustom || hasAnyCustomValue) && (!customUrlText || !customModel)) {
-      showResult("自定义 API 需要同时填写 Base URL 和模型名称。", true);
+      showResult(t("opt.customNeedsBoth"), true);
       return null;
     }
-    const customUrl = customUrlText ? validHttpUrl(customUrlText, "请输入有效的自定义 API Base URL") : "";
+    const customUrl = customUrlText ? validHttpUrl(customUrlText, t("opt.invalidCustomUrl")) : "";
     const amount = Number(fields.maxChars.value);
     if (!Number.isFinite(amount) || amount < 5000 || amount > 120000) {
-      showResult("字符数需要在 5,000 到 120,000 之间。", true);
+      showResult(t("opt.maxCharsRange"), true);
       return null;
     }
     return {
@@ -133,7 +147,7 @@ function addCustomDefaultOption() {
   const model = fields.customApiModel.value.trim();
   if (!model) return;
   const value = `${CUSTOM_PREFIX}${model}`;
-  addModelOption(value, `自定义 API · ${model}`, fields.selectedModel.value === value);
+  addModelOption(value, t("opt.customOption", { model }), fields.selectedModel.value === value);
 }
 
 function addModelOption(value, label, selected = false) {
@@ -142,7 +156,27 @@ function addModelOption(value, label, selected = false) {
 }
 
 function displayModel(value) {
-  return value.startsWith(CUSTOM_PREFIX) ? `自定义 API · ${value.slice(CUSTOM_PREFIX.length)}` : value;
+  if (!value) return t("opt.chooseInPanel");
+  return value.startsWith(CUSTOM_PREFIX) ? t("opt.customOption", { model: value.slice(CUSTOM_PREFIX.length) }) : value;
+}
+
+function setLanguage(preference) {
+  t = PageLensI18n.translator(PageLensI18n.resolveLanguage(preference, navigator.language));
+  applyLanguage();
+}
+
+function applyLanguage() {
+  document.documentElement.lang = t("meta.htmlLang");
+  document.title = t("opt.pageTitle");
+  PageLensI18n.apply(document, t);
+  renderSecretButtons();
+  for (const option of fields.selectedModel.options) option.textContent = displayModel(option.value);
+}
+
+function renderSecretButtons() {
+  document.querySelectorAll("[data-secret-target]").forEach((button) => {
+    button.textContent = t(fields[button.dataset.secretTarget].type === "password" ? "opt.show" : "opt.hide");
+  });
 }
 
 function showResult(message, isError) {
