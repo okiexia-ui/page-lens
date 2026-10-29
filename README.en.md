@@ -39,9 +39,13 @@ It works especially well for long English articles, opinion pieces, and research
 
 ## Install
 
-1. Download the latest `page-lens-reader-v*.zip` from [Releases](https://github.com/okiexia-ui/page-lens/releases) and unzip it (or clone this repository and use its `extension` folder).
+1. Download the latest `page-lens-reader-v*.zip` from [Releases](https://github.com/okiexia-ui/page-lens/releases) and unzip it. Alternatively, clone this repository; before loading the source directly, run this from the repository root:
+   ```bash
+   cp extension/config.local.example.js extension/config.local.js
+   ```
+   Prefer entering local keys in the extension Settings page. Git ignores `config.local.js`; release ZIPs already contain an empty config file and need no copy step.
 2. Open `chrome://extensions` and turn on **Developer mode** in the top-right corner.
-3. Click **Load unpacked** and choose the unzipped folder.
+3. Click **Load unpacked** and choose the unzipped folder (or the `extension` folder for a source checkout).
 4. Pin **Page Lens Reader** to the toolbar, open any article, then click the icon or press `Alt+Shift+L`.
 
 Requires Chrome 116 or later.

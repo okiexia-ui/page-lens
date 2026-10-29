@@ -39,9 +39,13 @@
 
 ## 安装
 
-1. 在 [Releases](https://github.com/okiexia-ui/page-lens/releases) 下载最新的 `page-lens-reader-v*.zip` 并解压（或直接 clone 本仓库，使用其中的 `extension` 文件夹）。
+1. 在 [Releases](https://github.com/okiexia-ui/page-lens/releases) 下载最新的 `page-lens-reader-v*.zip` 并解压。也可以 clone 本仓库；直接加载源码前，先在仓库根目录执行：
+   ```bash
+   cp extension/config.local.example.js extension/config.local.js
+   ```
+   本机密钥建议在扩展的设置页填写；`config.local.js` 已被 Git 忽略，发布压缩包已包含空的配置文件，无需复制。
 2. 打开 `chrome://extensions`，开启右上角的**开发者模式**。
-3. 点击**加载已解压的扩展程序**，选择解压后的文件夹。
+3. 点击**加载已解压的扩展程序**，选择解压后的文件夹（源码安装则选择 `extension` 文件夹）。
 4. 把 **Page Lens Reader** 固定到工具栏，打开任意文章，点击图标或按 `Alt+Shift+L`。
 
 需要 Chrome 116 或更新版本。
