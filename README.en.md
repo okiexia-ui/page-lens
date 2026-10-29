@@ -43,7 +43,7 @@ It works especially well for long English articles, opinion pieces, and research
    ```bash
    cp extension/config.local.example.js extension/config.local.js
    ```
-   Prefer entering local keys in the extension Settings page. Git ignores `config.local.js`; release ZIPs already contain an empty config file and need no copy step.
+   The copy starts with an empty key; enter keys in the extension Settings page. (Skipping the copy still works, but Chrome logs a missing-file error for the extension.) Git ignores `config.local.js`; release ZIPs already contain an empty config file and need no copy step.
 2. Open `chrome://extensions` and turn on **Developer mode** in the top-right corner.
 3. Click **Load unpacked** and choose the unzipped folder (or the `extension` folder for a source checkout).
 4. Pin **Page Lens Reader** to the toolbar, open any article, then click the icon or press `Alt+Shift+L`.
