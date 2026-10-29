@@ -43,7 +43,7 @@
    ```bash
    cp extension/config.local.example.js extension/config.local.js
    ```
-   本机密钥建议在扩展的设置页填写；`config.local.js` 已被 Git 忽略，发布压缩包已包含空的配置文件，无需复制。
+   复制出来的文件密钥为空，密钥请在扩展的设置页填写（不复制也能用，只是 Chrome 会在扩展错误里记一条找不到文件）。`config.local.js` 已被 Git 忽略，发布压缩包已包含空的配置文件，无需复制。
 2. 打开 `chrome://extensions`，开启右上角的**开发者模式**。
 3. 点击**加载已解压的扩展程序**，选择解压后的文件夹（源码安装则选择 `extension` 文件夹）。
 4. 把 **Page Lens Reader** 固定到工具栏，打开任意文章，点击图标或按 `Alt+Shift+L`。
